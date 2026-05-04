@@ -16,13 +16,13 @@
     "README.md",
     "LICENSE"
   ],
-  "homepage": "https://github.com/shirschfield/carly-cli",
+  "homepage": "https://github.com/usecarly/carly-cli",
   "repository": {
     "type": "git",
-    "url": "https://github.com/shirschfield/carly-cli.git"
+    "url": "https://github.com/usecarly/carly-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/shirschfield/carly-cli/issues"
+    "url": "https://github.com/usecarly/carly-cli/issues"
   },
   "scripts": {
     "build": "tsup",

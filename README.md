@@ -15,7 +15,7 @@ npm install -g carly-ai
 Or run from source:
 
 ```bash
-git clone https://github.com/shirschfield/carly-cli.git
+git clone https://github.com/usecarly/carly-cli.git
 cd carly-cli
 npm install && npm run build
 npm link       # exposes `carly` on PATH
@@ -287,7 +287,7 @@ Each `CommandDefinition` carries:
 ## Development
 
 ```bash
-git clone https://github.com/shirschfield/carly-cli.git
+git clone https://github.com/usecarly/carly-cli.git
 cd carly-cli
 npm install
 
