@@ -4,7 +4,8 @@
   "description": "Agent-native CLI and MCP server for Carly — the AI scheduling assistant. Read bookings, booking pages, event types, and slots from any MCP-compatible client or shell.",
   "type": "module",
   "bin": {
-    "carly": "dist/index.js"
+    "carly": "dist/index.js",
+    "carly-mcp": "dist/mcp.js"
   },
   "main": "dist/index.js",
   "exports": {
