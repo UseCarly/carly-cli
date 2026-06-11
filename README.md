@@ -6,6 +6,8 @@ Agent-native CLI and MCP server for [Carly](https://www.usecarly.com) — the AI
 
 11 tools across 5 resource groups. Same command definitions drive the CLI and the MCP server, so there is no drift between human and agent interfaces.
 
+Works with Google Calendar, Outlook, and Zoom.
+
 ## Install
 
 ```bash
