@@ -230,6 +230,29 @@ function sampleLiteral(cmd: CommandDefinition): string {
   return JSON.stringify(obj);
 }
 
+// Output fields per resource group, sourced from each list command's columns.
+const groupColumns: Record<string, string[]> = {};
+for (const c of allCommands) {
+  if (c.subcommand === 'list' && c.defaultColumns?.length) groupColumns[c.group] = c.defaultColumns;
+}
+
+function outputFieldType(col: string): string {
+  if (/(_at|_time)$|^date$|^start$|^end$/.test(col)) return 'datetime';
+  if (/^is_|^selected$/.test(col)) return 'boolean';
+  if (/^id$|_id$|^length$/.test(col)) return 'integer';
+  return 'string';
+}
+
+function outputFieldsLiteral(group: string, ensureId: boolean): string {
+  const cols = [...(groupColumns[group] ?? [])];
+  if (ensureId && !cols.includes('id')) cols.unshift('id');
+  if (!cols.length) return '[]';
+  const items = cols.map(
+    (c) => `    { key: ${jsString(c)}, label: ${jsString(humanize(c))}, type: ${jsString(outputFieldType(c))} }`,
+  );
+  return `[\n${items.join(',\n')}\n  ]`;
+}
+
 function operationObject(cmd: CommandDefinition, returns: 'array' | 'object'): string {
   const noun = NOUNS[cmd.group] ?? humanize(cmd.group);
   const label = (LABELS[cmd.subcommand] ?? ((n: string) => `${humanize(cmd.subcommand)} ${n}`))(noun);
@@ -246,6 +269,7 @@ function operationObject(cmd: CommandDefinition, returns: 'array' | 'object'): s
     perform: async (z, bundle) => {
 ${performBody(cmd, returns)}
     },
+    outputFields: ${outputFieldsLiteral(cmd.group, false)},
     sample: ${sampleLiteral(cmd)},
   },
 }`;
@@ -268,6 +292,7 @@ function triggerFromGet(cmd: CommandDefinition): string {
     perform: async (z, bundle) => {
 ${performBody(cmd, 'trigger')}
     },
+    outputFields: ${outputFieldsLiteral(cmd.group, true)},
     sample: ${sampleLiteral(cmd)},
   },
 }`;
@@ -295,6 +320,7 @@ function newBookingTrigger(): string {
       // Zapier dedupes by \`id\`; Carly bookings are keyed by \`uid\`.
       return toArray(response.data).map((b) => ({ id: String(b.uid || b.id || ''), ...b }));
     },
+    outputFields: ${outputFieldsLiteral('bookings', true)},
     sample: { id: 'abc123xyz', uid: 'abc123xyz', status: 'accepted', start_time: '2026-05-01T09:00:00Z', end_time: '2026-05-01T09:30:00Z', title: 'Intro call' },
   },
 }`;
