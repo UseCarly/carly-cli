@@ -251,7 +251,7 @@ for (const group of groupsInOrder) {
 const description = {
   displayName: 'Carly',
   name: 'carly',
-  icon: 'file:carly.svg',
+  icon: 'file:carly.png',
   group: ['transform'],
   version: 1,
   subtitle: '={{$parameter["operation"] + ": " + $parameter["resource"]}}',
