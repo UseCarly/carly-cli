@@ -131,6 +131,13 @@ function jsString(s: string): string {
   return JSON.stringify(s);
 }
 
+// ID fields get a dynamic dropdown sourced from the matching list trigger
+// (Zapier D004) — pick a booking page / booking instead of typing an ID.
+const DYNAMIC_DROPDOWN: Record<string, string> = {
+  eventTypeId: 'new_booking_page.id.title',
+  uid: 'new_booking.id.title',
+};
+
 function inputFieldsLiteral(fields: FieldModel[]): string {
   const items = fields.map((f) => {
     const parts = [
@@ -145,6 +152,7 @@ function inputFieldsLiteral(fields: FieldModel[]): string {
     if (f.helpText && norm(f.helpText) !== norm(humanize(f.field))) {
       parts.push(`helpText: ${jsString(f.helpText)}`);
     }
+    if (DYNAMIC_DROPDOWN[f.field]) parts.push(`dynamic: ${jsString(DYNAMIC_DROPDOWN[f.field])}`);
     return `    { ${parts.join(', ')} }`;
   });
   return `[\n${items.join(',\n')}\n  ]`;
@@ -220,12 +228,21 @@ const LABELS: Record<string, (noun: string) => string> = {
   whoami: () => 'Get Profile',
 };
 
-function sampleLiteral(cmd: CommandDefinition): string {
+// Sample values must match the declared outputField type (else Zapier warns
+// about inconsistent types). Triggers emit a stringified `id` (from uid/key).
+function sampleValue(col: string): unknown {
+  const t = outputFieldType(col);
+  if (t === 'integer') return 1;
+  if (t === 'boolean') return true;
+  if (t === 'datetime') return '2026-05-01T09:00:00Z';
+  return `sample ${col}`;
+}
+function sampleLiteral(cmd: CommandDefinition, isTrigger = false): string {
   const cols = cmd.defaultColumns ?? [];
-  const obj: Record<string, unknown> = { id: 1 };
+  const obj: Record<string, unknown> = { id: isTrigger ? '1' : 1 };
   for (const c of cols) {
     if (c === 'id') continue;
-    obj[c] = /time$/i.test(c) ? '2026-05-01T09:00:00Z' : `sample ${c}`;
+    obj[c] = sampleValue(c);
   }
   return JSON.stringify(obj);
 }
@@ -243,13 +260,15 @@ function outputFieldType(col: string): string {
   return 'string';
 }
 
-function outputFieldsLiteral(group: string, ensureId: boolean): string {
+function outputFieldsLiteral(group: string, isTrigger: boolean): string {
   const cols = [...(groupColumns[group] ?? [])];
-  if (ensureId && !cols.includes('id')) cols.unshift('id');
+  if (isTrigger && !cols.includes('id')) cols.unshift('id');
   if (!cols.length) return '[]';
-  const items = cols.map(
-    (c) => `    { key: ${jsString(c)}, label: ${jsString(humanize(c))}, type: ${jsString(outputFieldType(c))} }`,
-  );
+  const items = cols.map((c) => {
+    // Triggers emit `id` as a stringified value (String(uid/key/id)).
+    const type = isTrigger && c === 'id' ? 'string' : outputFieldType(c);
+    return `    { key: ${jsString(c)}, label: ${jsString(humanize(c))}, type: ${jsString(type)} }`;
+  });
   return `[\n${items.join(',\n')}\n  ]`;
 }
 
@@ -293,7 +312,7 @@ function triggerFromGet(cmd: CommandDefinition): string {
 ${performBody(cmd, 'trigger')}
     },
     outputFields: ${outputFieldsLiteral(cmd.group, true)},
-    sample: ${sampleLiteral(cmd)},
+    sample: ${sampleLiteral(cmd, true)},
   },
 }`;
 }
@@ -398,7 +417,7 @@ const authentication = {
       label: 'API Key',
       required: true,
       type: 'password',
-      helpText: 'Generate an API key in the Carly dashboard under Booking Pages \\u2192 "Generate API key". Create/update/delete and calendar actions need a key with the booking_pages:write scope.',
+      helpText: 'Generate an API key in the Carly dashboard under Booking Pages \\u2192 "Generate API key". Create/update/delete and calendar actions need a key with the booking_pages:write scope. See the [Carly API docs](https://www.usecarly.com/developers) for details.',
     },
   ],
   test: async (z, bundle) => {
@@ -429,6 +448,8 @@ const App = {
   authentication,
   beforeRequest: [addAuthHeader],
   afterResponse: [],
+  // Don't auto-strip input data — keep behavior predictable (Zapier D028).
+  flags: { cleanInputData: false },
   triggers,
   creates,
   searches,
