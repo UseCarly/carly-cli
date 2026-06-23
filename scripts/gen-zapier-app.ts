@@ -423,9 +423,11 @@ const authentication = {
   test: async (z, bundle) => {
     const response = await z.request({ url: BASE_URL + '/whoami' });
     response.throwForStatus();
-    return response.data;
+    // Flatten so the connection label can reference {{email}} directly.
+    const user = (response.data && response.data.user) || {};
+    return { email: user.email, id: user.id };
   },
-  connectionLabel: '{{json.user.email}}',
+  connectionLabel: '{{email}}',
 };
 `;
 
