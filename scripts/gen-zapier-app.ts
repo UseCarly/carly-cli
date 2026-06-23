@@ -139,15 +139,19 @@ function inputFieldsLiteral(fields: FieldModel[]): string {
       `type: ${jsString(f.type)}`,
     ];
     if (f.required) parts.push('required: true');
-    // Skip help text that merely repeats the label (Zapier D011).
-    if (f.helpText && f.helpText !== humanize(f.field)) parts.push(`helpText: ${jsString(f.helpText)}`);
+    // Skip help text that merely repeats the label (Zapier D011) — compared
+    // case/punctuation-insensitively so "Event type ID" ~= label "Event Type Id".
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (f.helpText && norm(f.helpText) !== norm(humanize(f.field))) {
+      parts.push(`helpText: ${jsString(f.helpText)}`);
+    }
     return `    { ${parts.join(', ')} }`;
   });
   return `[\n${items.join(',\n')}\n  ]`;
 }
 
 /** Build the request inside a perform body. Returns lines of JS. */
-function performBody(cmd: CommandDefinition, returns: 'array' | 'object'): string {
+function performBody(cmd: CommandDefinition, returns: 'array' | 'object' | 'trigger'): string {
   const method = cmd.endpoint.method.toUpperCase();
   const fields = fieldsFor(cmd);
 
@@ -189,8 +193,16 @@ function performBody(cmd: CommandDefinition, returns: 'array' | 'object'): strin
 
   lines.push(`    const response = await z.request({ ${reqOpts.join(', ')} });`);
   lines.push('    response.throwForStatus();');
-  if (returns === 'array') lines.push('    return toArray(response.data);');
-  else lines.push('    return response.data || { success: true };');
+  if (returns === 'array') {
+    lines.push('    return toArray(response.data);');
+  } else if (returns === 'trigger') {
+    // Zapier dedupes by `id`; map from Carly's id/key/uid.
+    lines.push(
+      '    return toArray(response.data).map((it) => ({ id: String(it.id != null ? it.id : (it.key != null ? it.key : (it.uid != null ? it.uid : ""))), ...it }));',
+    );
+  } else {
+    lines.push('    return response.data || { success: true };');
+  }
 
   return lines.join('\n');
 }
@@ -201,7 +213,9 @@ const LABELS: Record<string, (noun: string) => string> = {
   create: (n) => `Create ${n}`,
   update: (n) => `Update ${n}`,
   delete: (n) => `Deactivate ${n}`,
-  select: () => 'Add Calendar To Availability',
+  // Zapier title-case (AP style): lowercase short prepositions ("to"), but
+  // capitalize 4+ letter ones ("From").
+  select: () => 'Add Calendar to Availability',
   unselect: () => 'Remove Calendar From Availability',
   whoami: () => 'Get Profile',
 };
@@ -231,6 +245,28 @@ function operationObject(cmd: CommandDefinition, returns: 'array' | 'object'): s
     inputFields: ${inputFieldsLiteral(fields)},
     perform: async (z, bundle) => {
 ${performBody(cmd, returns)}
+    },
+    sample: ${sampleLiteral(cmd)},
+  },
+}`;
+}
+
+// A parameterless GET list (no input fields) can't be a Zapier search (D009
+// requires a search field), so expose it as a polling trigger instead.
+function triggerFromGet(cmd: CommandDefinition): string {
+  const noun = NOUNS[cmd.group] ?? humanize(cmd.group);
+  const key = 'new_' + cmd.group.replace(/-/g, '_').replace(/s$/, '');
+  return `{
+  key: ${jsString(key)},
+  noun: ${jsString(noun)},
+  display: {
+    label: ${jsString('New ' + noun)},
+    description: ${jsString('Triggers when a new ' + noun.toLowerCase() + ' appears.')},
+  },
+  operation: {
+    type: 'polling',
+    perform: async (z, bundle) => {
+${performBody(cmd, 'trigger')}
     },
     sample: ${sampleLiteral(cmd)},
   },
@@ -273,8 +309,13 @@ const triggers: string[] = [newBookingTrigger()];
 for (const cmd of allCommands) {
   if (cmd.name === 'whoami') continue; // used by auth test
   const method = cmd.endpoint.method.toUpperCase();
-  if (method === 'GET') searches.push(operationObject(cmd, 'array'));
-  else creates.push(operationObject(cmd, 'object'));
+  if (method === 'GET') {
+    // Searches must have >=1 input field (D009); parameterless lists become triggers.
+    if (fieldsFor(cmd).length === 0) triggers.push(triggerFromGet(cmd));
+    else searches.push(operationObject(cmd, 'array'));
+  } else {
+    creates.push(operationObject(cmd, 'object'));
+  }
 }
 
 const keyOf = (objLiteral: string) => {
