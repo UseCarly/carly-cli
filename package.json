@@ -29,6 +29,7 @@
     "build": "tsup",
     "dev": "tsx src/index.ts",
     "dev:mcp": "tsx src/mcp.ts",
+    "gen:n8n": "tsx scripts/gen-n8n-node.ts",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
