@@ -128,7 +128,7 @@ function buildModule(cmd: CommandDefinition): Record<string, unknown> {
     } else if (f.location === 'query') {
       qs[f.field] = `{{parameters.${f.field}}}`;
     } else if (f.location === 'body') {
-      body[f.field] = f.json ? `{{parse(parameters.${f.field})}}` : `{{parameters.${f.field}}}`;
+      body[f.field] = f.json ? `{{parseJSON(parameters.${f.field})}}` : `{{parameters.${f.field}}}`;
     }
   }
   for (const [k, v] of Object.entries(CONSTANT_BODY[cmd.name] ?? {})) body[k] = v;
