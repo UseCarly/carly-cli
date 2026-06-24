@@ -33,6 +33,7 @@
     "gen:zapier": "tsx scripts/gen-zapier-app.ts",
     "gen:openapi": "tsx scripts/gen-openapi.ts",
     "gen:make": "tsx scripts/gen-make-app.ts",
+    "gen:pipedream": "tsx scripts/gen-pipedream.ts",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
