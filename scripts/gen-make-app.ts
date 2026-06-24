@@ -193,16 +193,22 @@ write('base.imljson', {
 write('connection/parameters.imljson', [
   {
     name: 'apiKey',
-    type: 'text',
+    type: 'password',
     label: 'API Key',
     required: true,
+    editable: true,
     help: 'Generate an API key in the Carly dashboard. Write actions need the booking_pages:write scope.',
   },
 ]);
 write('connection/communication.imljson', {
   url: `${BASE_URL}/whoami`,
   headers: { authorization: 'Bearer {{parameters.apiKey}}' },
-  response: { error: { message: '[{{statusCode}}] {{body.message}}' } },
+  response: {
+    valid: '{{statusCode === 200}}',
+    error: { message: '[{{statusCode}}] {{body.message}}' },
+    // Label each connection by the account's email for easy identification.
+    metadata: { type: 'email', value: '{{body.user.email}}' },
+  },
   log: { sanitize: ['request.headers.authorization'] },
 });
 
@@ -225,11 +231,15 @@ write('modules/make_api_call.imljson', {
   communication: {
     url: '{{parameters.url}}',
     method: '{{parameters.method}}',
-    // No `headers` here — defining it would replace base's Authorization header
-    // and break auth. The Bearer header is inherited from base.
-    qs: '{{toCollection(parameters.qs, "key", "value")}}',
+    // The `{{...}}` spread key MERGES these into the request rather than
+    // replacing — so base's Authorization header is preserved.
+    headers: { '{{...}}': '{{toCollection(parameters.headers, "key", "value")}}' },
+    qs: { '{{...}}': '{{toCollection(parameters.qs, "key", "value")}}' },
     body: '{{parameters.body}}',
-    response: { output: '{{body}}' },
+    type: 'text',
+    response: {
+      output: { body: '{{body}}', headers: '{{headers}}', statusCode: '{{statusCode}}' },
+    },
   },
   mappableParameters: [
     {
@@ -246,6 +256,18 @@ write('modules/make_api_call.imljson', {
       required: true,
       default: 'GET',
       options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({ label: m, value: m })),
+    },
+    {
+      name: 'headers',
+      type: 'array',
+      label: 'Headers',
+      spec: {
+        type: 'collection',
+        spec: [
+          { name: 'key', type: 'text', label: 'Key' },
+          { name: 'value', type: 'text', label: 'Value' },
+        ],
+      },
     },
     {
       name: 'qs',
