@@ -225,7 +225,8 @@ write('modules/make_api_call.imljson', {
   communication: {
     url: '{{parameters.url}}',
     method: '{{parameters.method}}',
-    headers: '{{toCollection(parameters.headers, "key", "value")}}',
+    // No `headers` here — defining it would replace base's Authorization header
+    // and break auth. The Bearer header is inherited from base.
     qs: '{{toCollection(parameters.qs, "key", "value")}}',
     body: '{{parameters.body}}',
     response: { output: '{{body}}' },
@@ -245,18 +246,6 @@ write('modules/make_api_call.imljson', {
       required: true,
       default: 'GET',
       options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({ label: m, value: m })),
-    },
-    {
-      name: 'headers',
-      type: 'array',
-      label: 'Headers',
-      spec: {
-        type: 'collection',
-        spec: [
-          { name: 'key', type: 'text', label: 'Key' },
-          { name: 'value', type: 'text', label: 'Value' },
-        ],
-      },
     },
     {
       name: 'qs',
