@@ -203,6 +203,7 @@ write('connection/parameters.imljson', [
 write('connection/communication.imljson', {
   url: `${BASE_URL}/whoami`,
   headers: { authorization: 'Bearer {{parameters.apiKey}}' },
+  response: { error: { message: '[{{statusCode}}] {{body.message}}' } },
   log: { sanitize: ['request.headers.authorization'] },
 });
 
@@ -213,6 +214,68 @@ for (const cmd of allCommands) {
   write(`modules/${cmd.name}.imljson`, buildModule(cmd));
   written.push(cmd.name);
 }
+
+// Universal module — mandatory for Make review. Lets users make an arbitrary
+// authorized call to any Carly endpoint.
+write('modules/make_api_call.imljson', {
+  metadata: {
+    label: 'Make an API Call',
+    description: 'Perform an arbitrary authorized call to the Carly API.',
+  },
+  connection: 'carly',
+  communication: {
+    url: '{{parameters.url}}',
+    method: '{{parameters.method}}',
+    headers: '{{toCollection(parameters.headers, "key", "value")}}',
+    qs: '{{toCollection(parameters.qs, "key", "value")}}',
+    body: '{{parameters.body}}',
+    response: { output: '{{body}}' },
+  },
+  mappableParameters: [
+    {
+      name: 'url',
+      type: 'text',
+      label: 'URL',
+      required: true,
+      help: `Relative to ${BASE_URL}, e.g. /bookings or /booking-pages/42`,
+    },
+    {
+      name: 'method',
+      type: 'select',
+      label: 'Method',
+      required: true,
+      default: 'GET',
+      options: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({ label: m, value: m })),
+    },
+    {
+      name: 'headers',
+      type: 'array',
+      label: 'Headers',
+      spec: {
+        type: 'collection',
+        spec: [
+          { name: 'key', type: 'text', label: 'Key' },
+          { name: 'value', type: 'text', label: 'Value' },
+        ],
+      },
+    },
+    {
+      name: 'qs',
+      type: 'array',
+      label: 'Query String',
+      spec: {
+        type: 'collection',
+        spec: [
+          { name: 'key', type: 'text', label: 'Key' },
+          { name: 'value', type: 'text', label: 'Value' },
+        ],
+      },
+    },
+    { name: 'body', type: 'any', label: 'Body' },
+  ],
+  interface: [],
+});
+written.push('make_api_call (universal)');
 
 console.log(
   `Generated ${outDir}\n` +
