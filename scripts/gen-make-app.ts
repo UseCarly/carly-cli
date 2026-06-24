@@ -196,8 +196,7 @@ write('connection/parameters.imljson', [
     type: 'text',
     label: 'API Key',
     required: true,
-    help:
-      'Generate an API key in the Carly dashboard under Booking Pages → "Generate API key". Write actions need the booking_pages:write scope.',
+    help: 'Generate an API key in the Carly dashboard. Write actions need the booking_pages:write scope.',
   },
 ]);
 write('connection/communication.imljson', {
