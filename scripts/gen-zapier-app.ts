@@ -206,7 +206,7 @@ function performBody(cmd: CommandDefinition, returns: 'array' | 'object' | 'trig
   } else if (returns === 'trigger') {
     // Zapier dedupes by `id`; map from Carly's id/key/uid.
     lines.push(
-      '    return toArray(response.data).map((it) => ({ id: String(it.id != null ? it.id : (it.key != null ? it.key : (it.uid != null ? it.uid : ""))), ...it }));',
+      '    return toArray(response.data).map((it) => ({ ...it, id: String(it.id != null ? it.id : (it.key != null ? it.key : (it.uid != null ? it.uid : ""))) }));',
     );
   } else {
     lines.push('    return response.data || { success: true };');
@@ -337,7 +337,7 @@ function newBookingTrigger(): string {
       const response = await z.request({ url: \`\${BASE_URL}/bookings\`, method: 'GET', params });
       response.throwForStatus();
       // Zapier dedupes by \`id\`; Carly bookings are keyed by \`uid\`.
-      return toArray(response.data).map((b) => ({ id: String(b.uid || b.id || ''), ...b }));
+      return toArray(response.data).map((b) => ({ ...b, id: String(b.uid || b.id || '') }));
     },
     outputFields: ${outputFieldsLiteral('bookings', true)},
     sample: { id: 'abc123xyz', uid: 'abc123xyz', status: 'accepted', start_time: '2026-05-01T09:00:00Z', end_time: '2026-05-01T09:30:00Z', title: 'Intro call' },
