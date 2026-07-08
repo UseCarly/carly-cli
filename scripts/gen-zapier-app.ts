@@ -228,6 +228,38 @@ const LABELS: Record<string, (noun: string) => string> = {
   whoami: () => 'Get Profile',
 };
 
+// Zapier's naming conventions require an action/search description to start
+// with a 3rd-person verb ("Creates", "Finds", "Updates") and to describe ONLY
+// what the operation does — no how-to guidance, no CLI flags. The source
+// `cmd.description`s are intentionally richer (they double as CLI/MCP/OpenAPI
+// help), so we derive Zapier-compliant descriptions here instead of reusing
+// them. Per-operation guidance still reaches users via input-field helpText.
+// (Triggers get their own "Triggers when …" description elsewhere.)
+const DESCRIPTIONS: Record<string, (noun: string) => string> = {
+  list: (n) => `Finds ${n.toLowerCase()}s in your Carly account.`,
+  get: (n) => `Finds a ${n.toLowerCase()} by ID.`,
+  create: (n) => `Creates a ${n.toLowerCase()}.`,
+  update: (n) => `Updates an existing ${n.toLowerCase()}.`,
+  delete: (n) => `Deactivates a ${n.toLowerCase()}.`,
+  select: () => 'Adds a calendar to your booking-page availability so its events count as conflicts.',
+  unselect: () => 'Removes a calendar from your booking-page availability so its events no longer count as conflicts.',
+};
+
+// A few operations read more clearly with a hand-written 3rd-person line than
+// the generic template above. Keyed by command name; still "what it does" only.
+const DESCRIPTION_OVERRIDES: Record<string, string> = {
+  bookings_list: 'Finds bookings, optionally filtered by status, event type, or time range.',
+  event_types_list: 'Finds event types for the authenticated user or a public profile.',
+  slots_list: 'Finds available booking slots for an event type within a time range.',
+};
+
+function zapierDescription(cmd: CommandDefinition, noun: string): string {
+  return (
+    DESCRIPTION_OVERRIDES[cmd.name] ??
+    (DESCRIPTIONS[cmd.subcommand]?.(noun) ?? cmd.description)
+  );
+}
+
 // Sample values must match the declared outputField type (else Zapier warns
 // about inconsistent types). Triggers emit a stringified `id` (from uid/key).
 function sampleValue(col: string): unknown {
@@ -281,7 +313,7 @@ function operationObject(cmd: CommandDefinition, returns: 'array' | 'object'): s
   noun: ${jsString(noun)},
   display: {
     label: ${jsString(label)},
-    description: ${jsString(cmd.description)},
+    description: ${jsString(zapierDescription(cmd, noun))},
   },
   operation: {
     inputFields: ${inputFieldsLiteral(fields)},
@@ -318,6 +350,14 @@ ${performBody(cmd, 'trigger')}
 }
 
 // New Booking polling trigger (seeded from bookings list).
+//
+// The raw /bookings response nests the invitee(s) under `attendees` (an array
+// of {name,email,phone,company,timezone}) and the custom-question responses
+// under `custom_answers` (an object keyed by question label). Zapier's field
+// mapper can't reach into nested arrays/objects, so `perform` flattens the
+// primary attendee into `attendee_*` scalars and stringifies `custom_answers`
+// into `custom_answers_json`. The raw `attendees`/`custom_answers` still flow
+// through via the spread for Code/Formatter steps that want the full data.
 function newBookingTrigger(): string {
   return `{
   key: 'new_booking',
@@ -337,10 +377,41 @@ function newBookingTrigger(): string {
       const response = await z.request({ url: \`\${BASE_URL}/bookings\`, method: 'GET', params });
       response.throwForStatus();
       // Zapier dedupes by \`id\`; Carly bookings are keyed by \`uid\`.
-      return toArray(response.data).map((b) => ({ ...b, id: String(b.uid || b.id || '') }));
+      return toArray(response.data).map((b) => {
+        const attendee = (Array.isArray(b.attendees) && b.attendees[0]) || {};
+        return {
+          ...b,
+          id: String(b.uid || b.id || ''),
+          attendee_name: attendee.name || '',
+          attendee_email: attendee.email || '',
+          attendee_phone: attendee.phone || '',
+          attendee_company: attendee.company || '',
+          attendee_timezone: attendee.timezone || '',
+          custom_answers_json: b.custom_answers ? JSON.stringify(b.custom_answers) : '',
+        };
+      });
     },
-    outputFields: ${outputFieldsLiteral('bookings', true)},
-    sample: { id: 'abc123xyz', uid: 'abc123xyz', status: 'accepted', start_time: '2026-05-01T09:00:00Z', end_time: '2026-05-01T09:30:00Z', title: 'Intro call' },
+    outputFields: [
+      { key: 'id', label: 'ID', type: 'string' },
+      { key: 'uid', label: 'UID', type: 'string' },
+      { key: 'status', label: 'Status', type: 'string' },
+      { key: 'title', label: 'Title', type: 'string' },
+      { key: 'start_time', label: 'Start Time', type: 'datetime' },
+      { key: 'end_time', label: 'End Time', type: 'datetime' },
+      { key: 'username', label: 'Username', type: 'string' },
+      { key: 'event_type_id', label: 'Event Type ID', type: 'integer' },
+      { key: 'event_type_slug', label: 'Event Type Slug', type: 'string' },
+      { key: 'notes', label: 'Notes', type: 'string' },
+      { key: 'attendee_name', label: 'Attendee Name', type: 'string' },
+      { key: 'attendee_email', label: 'Attendee Email', type: 'string' },
+      { key: 'attendee_phone', label: 'Attendee Phone', type: 'string' },
+      { key: 'attendee_company', label: 'Attendee Company', type: 'string' },
+      { key: 'attendee_timezone', label: 'Attendee Timezone', type: 'string' },
+      { key: 'custom_answers_json', label: 'Custom Answers (JSON)', type: 'string', helpText: 'All custom-question answers as a JSON object keyed by question label.' },
+      { key: 'created_at', label: 'Created At', type: 'datetime' },
+      { key: 'cancellation_reason', label: 'Cancellation Reason', type: 'string' },
+    ],
+    sample: { id: '293d2414-1a54-4364-8a03-90a1c7911e04', uid: '293d2414-1a54-4364-8a03-90a1c7911e04', status: 'accepted', title: 'Alex Rivera <> Sarah', start_time: '2026-05-01T09:00:00Z', end_time: '2026-05-01T09:15:00Z', username: 'sarah', event_type_id: 42, event_type_slug: 'intro', notes: 'Looking forward to it.', attendee_name: 'Alex Rivera', attendee_email: 'alex@acme.com', attendee_phone: '', attendee_company: 'Acme Corp', attendee_timezone: 'America/New_York', custom_answers_json: '{"Company":"Acme Corp","What do you want to discuss?":"The Zapier integration."}', created_at: '2026-05-01T08:00:00Z', cancellation_reason: '' },
   },
 }`;
 }

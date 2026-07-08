@@ -37,7 +37,7 @@ export const bookingsListCommand: CommandDefinition = {
     startTime: 'query',
     endTime: 'query',
   },
-  defaultColumns: ['uid', 'status', 'start_time', 'end_time', 'username', 'title'],
+  defaultColumns: ['uid', 'status', 'start_time', 'end_time', 'username', 'title', 'event_type_slug', 'event_type_id'],
   handler: (input, client) => executeCommand(bookingsListCommand, input, client),
 };
 
