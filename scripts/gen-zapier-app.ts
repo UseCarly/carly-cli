@@ -407,7 +407,7 @@ function newBookingTrigger(): string {
       { key: 'attendee_phone', label: 'Attendee Phone', type: 'string' },
       { key: 'attendee_company', label: 'Attendee Company', type: 'string' },
       { key: 'attendee_timezone', label: 'Attendee Timezone', type: 'string' },
-      { key: 'custom_answers_json', label: 'Custom Answers (JSON)', type: 'string', helpText: 'All custom-question answers as a JSON object keyed by question label.' },
+      { key: 'custom_answers_json', label: 'Custom Answers (JSON)', type: 'string' },
       { key: 'created_at', label: 'Created At', type: 'datetime' },
       { key: 'cancellation_reason', label: 'Cancellation Reason', type: 'string' },
     ],
