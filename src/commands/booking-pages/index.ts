@@ -85,6 +85,28 @@ const _customQuestionSchema = z
   })
   .passthrough();
 
+// Booking-page content blocks. services/booking_widgets.normalize_widgets is
+// the authority — it enforces the per-type required fields, length caps, and
+// the allowed video hosts, then drops unknown keys. We validate only `type`
+// (the one thing that gives a useful client-side error) and passthrough the
+// rest, same as _customQuestionSchema.
+const _widgetSchema = z
+  .object({
+    type: z.enum(['video', 'image', 'text', 'link', 'testimonial']),
+  })
+  .passthrough();
+
+// Calendars whose events block availability on THIS page. Distinct from
+// `calendar_key` (where the booking gets written). Server shape is
+// {provider, integration_id, calendar_id} — the API aliases each inner key to
+// camelCase too, but we emit snake_case to match the shape `booking-pages get`
+// returns, so round-tripping a fetched page back through update just works.
+const _availabilityCalendarKeySchema = z.object({
+  provider: z.string().min(1),
+  integration_id: z.coerce.number().int().positive(),
+  calendar_id: z.string().min(1),
+});
+
 const _nestedBookingPageFields = {
   availability: z
     .preprocess(_jsonArrayPreprocessor, z.array(_availabilityRowSchema))
@@ -95,6 +117,7 @@ const _nestedBookingPageFields = {
   durationOptions: z
     .preprocess(_intListPreprocessor, z.array(z.number().int().positive()))
     .optional(),
+  widgets: z.preprocess(_jsonArrayPreprocessor, z.array(_widgetSchema).max(20)).optional(),
 };
 
 const _nestedCliOptions = [
@@ -115,18 +138,28 @@ const _nestedCliOptions = [
     field: 'durationOptions',
     description: 'Bookable durations as CSV (15,30,60) or JSON array ([15,30,60])',
   },
+  {
+    flags: '--widgets <json>',
+    field: 'widgets',
+    description:
+      'Page content blocks as JSON, max 20: [{"type":"video","url":"https://youtu.be/..."},{"type":"text","heading":"About","body":"..."}] (types: video, image, text, link, testimonial)',
+  },
 ];
 
 const _nestedFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
   availability: 'body',
   customQuestions: 'body',
   durationOptions: 'body',
+  widgets: 'body',
 };
 
+// Server-side Pydantic coerces "true"/"false" → bool. Accept both so MCP
+// callers passing a JSON bool and CLI callers passing a string both work.
+const _boolish = z.union([z.boolean(), z.enum(['true', 'false'])]);
+
 // Zod schema for the write fields shared by create and update.
-// Nested fields (availability, customQuestions, durationOptions) are defined
-// above in `_nestedBookingPageFields`. `collect_phone/company` are still
-// omitted — rare enough on the CLI and easy to add later.
+// Nested fields (availability, customQuestions, durationOptions, widgets) are
+// defined above in `_nestedBookingPageFields`.
 const _scalarBookingPageFields = {
   slug: z.string().trim().optional(),
   description: z.string().optional(),
@@ -143,6 +176,9 @@ const _scalarBookingPageFields = {
   beforeEventBuffer: z.coerce.number().int().nonnegative().optional(),
   afterEventBuffer: z.coerce.number().int().nonnegative().optional(),
   slotInterval: z.coerce.number().int().positive().optional(),
+  notificationEmail: z.string().trim().max(255).optional(),
+  collectPhone: _boolish.optional(),
+  collectCompany: _boolish.optional(),
 };
 
 const _scalarCliOptions = [
@@ -161,6 +197,9 @@ const _scalarCliOptions = [
   { flags: '--before-event-buffer <min>', field: 'beforeEventBuffer', description: 'Buffer before each meeting (minutes)' },
   { flags: '--after-event-buffer <min>', field: 'afterEventBuffer', description: 'Buffer after each meeting (minutes)' },
   { flags: '--slot-interval <min>', field: 'slotInterval', description: 'Slot interval override (minutes)' },
+  { flags: '--notification-email <email>', field: 'notificationEmail', description: 'Send new-booking notifications here instead of the account email' },
+  { flags: '--collect-phone <true|false>', field: 'collectPhone', description: 'Ask the guest for a phone number' },
+  { flags: '--collect-company <true|false>', field: 'collectCompany', description: 'Ask the guest for a company name' },
 ];
 
 const _scalarFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
@@ -179,6 +218,9 @@ const _scalarFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
   beforeEventBuffer: 'body',
   afterEventBuffer: 'body',
   slotInterval: 'body',
+  notificationEmail: 'body',
+  collectPhone: 'body',
+  collectCompany: 'body',
 };
 
 export const bookingPagesCreateCommand: CommandDefinition = {
@@ -186,12 +228,13 @@ export const bookingPagesCreateCommand: CommandDefinition = {
   group: 'booking-pages',
   subcommand: 'create',
   description:
-    'Create a new booking page. Requires the `booking_pages:write` scope. Accepts nested fields (--availability, --custom-questions, --duration-options) as JSON.',
+    'Create a new booking page. Requires the `booking_pages:write` scope. Accepts nested fields (--availability, --custom-questions, --duration-options, --widgets) as JSON. Availability calendars are not settable on create — a new page uses the account-wide conflict-check selection until you narrow it with an update.',
   examples: [
     'carly booking-pages create --title "15 minute intro" --duration 15 --slug 15min',
     'carly booking-pages create --title "Deep dive" --duration 60 --video-provider google_meet --location "Remote"',
     `carly booking-pages create --title "Coffee chat" --duration 30 --availability '[{"days":[1,2,3,4,5],"start_time":"09:00","end_time":"17:00"}]'`,
     `carly booking-pages create --title "Intake call" --duration 45 --custom-questions '[{"label":"Company","type":"text","required":true}]' --duration-options 30,45,60`,
+    `carly booking-pages create --title "Demo" --duration 30 --widgets '[{"type":"text","heading":"What we cover","body":"A 30-minute walkthrough."}]'`,
   ],
   inputSchema: z.object({
     title: z.string().trim().min(1),
@@ -219,20 +262,26 @@ export const bookingPagesUpdateCommand: CommandDefinition = {
   group: 'booking-pages',
   subcommand: 'update',
   description:
-    'Update an existing booking page by its event type ID. Requires the `booking_pages:write` scope. Only fields you pass are updated. Nested fields (--availability, --custom-questions, --duration-options) accept JSON and replace the previous value.',
+    'Update an existing booking page by its event type ID. Requires the `booking_pages:write` scope. Only fields you pass are updated. Nested fields (--availability, --custom-questions, --duration-options, --widgets, --availability-calendar-keys) accept JSON and replace the previous value.',
   examples: [
     'carly booking-pages update 42 --description "Updated description"',
     'carly booking-pages update 42 --is-active false',
     'carly booking-pages update 42 --duration 45 --min-notice-minutes 60',
     `carly booking-pages update 42 --availability '[{"days":[1,2,3,4,5],"start_time":"10:00","end_time":"16:00"}]'`,
     'carly booking-pages update 42 --duration-options 15,30,60',
+    `carly booking-pages update 42 --widgets '[{"type":"video","url":"https://youtu.be/dQw4w9WgXcQ","title":"How this works"}]'`,
+    `carly booking-pages update 42 --availability-calendar-keys '[{"provider":"google","integration_id":12,"calendar_id":"primary"}]'`,
   ],
   inputSchema: z.object({
     eventTypeId: z.coerce.number().int().positive(),
     title: z.string().trim().min(1).optional(),
-    // Server-side Pydantic coerces "true"/"false" → bool. Accept both on the
-    // CLI so MCP callers passing a JSON bool still work.
-    isActive: z.union([z.boolean(), z.enum(['true', 'false'])]).optional(),
+    isActive: _boolish.optional(),
+    // Update-only: BookingPageCreateRequest has no availability_calendar_keys,
+    // so a new page inherits the account-wide "check for conflicts on"
+    // selection until you narrow it here.
+    availabilityCalendarKeys: z
+      .preprocess(_jsonArrayPreprocessor, z.array(_availabilityCalendarKeySchema))
+      .optional(),
     ..._scalarBookingPageFields,
     ..._nestedBookingPageFields,
   }),
@@ -241,6 +290,12 @@ export const bookingPagesUpdateCommand: CommandDefinition = {
     options: [
       { flags: '--title <title>', field: 'title', description: 'Page title' },
       { flags: '--is-active <true|false>', field: 'isActive', description: 'Enable or disable the page' },
+      {
+        flags: '--availability-calendar-keys <json>',
+        field: 'availabilityCalendarKeys',
+        description:
+          'Calendars that block availability on THIS page, as JSON: [{"provider":"google","integration_id":12,"calendar_id":"primary"}] (see `carly calendars list`)',
+      },
       ..._scalarCliOptions,
       ..._nestedCliOptions,
     ],
@@ -250,6 +305,7 @@ export const bookingPagesUpdateCommand: CommandDefinition = {
     eventTypeId: 'path',
     title: 'body',
     isActive: 'body',
+    availabilityCalendarKeys: 'body',
     ..._scalarFieldMappings,
     ..._nestedFieldMappings,
   },

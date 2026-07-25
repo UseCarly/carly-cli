@@ -1,6 +1,6 @@
 {
   "name": "carly-ai",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Agent-native CLI and MCP server for Carly — the AI scheduling assistant. Read bookings, booking pages, event types, and slots from any MCP-compatible client or shell.",
   "type": "module",
   "bin": {
