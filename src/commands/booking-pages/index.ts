@@ -142,7 +142,10 @@ const _nestedCliOptions = [
     flags: '--widgets <json>',
     field: 'widgets',
     description:
-      'Page content blocks as JSON, max 20: [{"type":"video","url":"https://youtu.be/..."},{"type":"text","heading":"About","body":"..."}] (types: video, image, text, link, testimonial)',
+      // No literal URL here on purpose: Zapier's D008 publishing check reads a
+      // bare URL in help text as a malformed markdown link, which blocks
+      // promoting the app. Keep the example URL-free.
+      'Page content blocks as JSON, max 20. Each block has a type — video, image, text, link, or testimonial — plus that type\'s fields, e.g. {"type":"text","heading":"About","body":"..."}',
   },
 ];
 
