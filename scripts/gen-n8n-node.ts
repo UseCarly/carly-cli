@@ -98,12 +98,83 @@ function defaultFor(type: string): unknown {
 // ---- Display-name helpers -------------------------------------------------
 
 function humanize(s: string): string {
-  return s
-    .replace(/[_-]+/g, ' ')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return (
+    s
+      .replace(/[_-]+/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      // n8n's lint insists on "ID", not "Id".
+      .replace(/\bId\b/g, 'ID')
+      .replace(/\bUid\b/g, 'UID')
+      .replace(/\bUrl\b/g, 'URL')
+  );
+}
+
+/**
+ * Operation `action` strings, which n8n runs through `sentenceCase()` and then
+ * compares. That strips apostrophes and parentheses, so anything punctuated
+ * fails the check — command descriptions can't be reused verbatim. Same
+ * phrasing as the Make app's module labels.
+ */
+const ACTION_LABELS: Record<string, string> = {
+  whoami: 'Get profile',
+  calendars_list: 'List calendars',
+  calendars_select: 'Add a calendar to availability',
+  calendars_unselect: 'Remove a calendar from availability',
+  booking_pages_list: 'List booking pages',
+  booking_pages_get: 'Get a booking page',
+  booking_pages_create: 'Create a booking page',
+  booking_pages_update: 'Update a booking page',
+  booking_pages_delete: 'Delete a booking page',
+  event_types_list: 'List event types',
+  slots_list: 'List slots',
+  bookings_list: 'List bookings',
+  bookings_get: 'Get a booking',
+};
+
+/** Resource option names must be singular (node-param-resource-with-plural-option). */
+const RESOURCE_LABELS: Record<string, string> = {
+  profile: 'Profile',
+  calendars: 'Calendar',
+  'booking-pages': 'Booking Page',
+  'event-types': 'Event Type',
+  slots: 'Slot',
+  bookings: 'Booking',
+};
+
+/**
+ * n8n's description rules: encode angle brackets, say "ID" not "Id", start
+ * boolean descriptions with "Whether", and — the fiddly one — a single-sentence
+ * description must NOT end in a period while a multi-sentence one must. The
+ * lint splits on ". " to decide which it is, so match that exactly.
+ */
+function cleanDescription(text: string, type: string, displayName: string): string | undefined {
+  let out = text.trim();
+  if (!out) return undefined;
+  out = out.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  out = out.replace(/\bid\b/gi, 'ID').replace(/\buid\b/gi, 'UID');
+  if (type === 'boolean' && !/^whether\b/i.test(out)) {
+    // "Ask the guest for a phone number" -> "Whether to ask the guest ..."
+    out = `Whether to ${out.charAt(0).toLowerCase()}${out.slice(1)}`;
+  }
+  // The lint drops the first literal "e.g." before counting, so an example
+  // clause doesn't make a one-sentence description look like two.
+  if (out.replace('e.g.', '').split('. ').length === 1) {
+    out = out.replace(/\.+$/, '');
+  } else if (!/[.!?]$/.test(out)) {
+    out += '.';
+  }
+  // A description that just restates the label adds nothing, and n8n's lint
+  // rejects it outright.
+  if (out.replace(/\.$/, '').toLowerCase() === displayName.toLowerCase()) return undefined;
+  return out;
+}
+
+/** Alphabetize option lists by the key n8n's unsorted-items rules check. */
+function byName<T extends { name?: string; displayName?: string }>(items: T[], key: 'name' | 'displayName'): T[] {
+  return [...items].sort((a, b) => String(a[key] ?? '').localeCompare(String(b[key] ?? '')));
 }
 
 // ---- Field model ----------------------------------------------------------
@@ -162,7 +233,10 @@ properties.push({
   name: 'resource',
   type: 'options',
   noDataExpression: true,
-  options: groupsInOrder.map((g) => ({ name: humanize(g), value: g })),
+  options: byName(
+    groupsInOrder.map((g) => ({ name: RESOURCE_LABELS[g] ?? humanize(g), value: g })),
+    'name',
+  ),
   default: groupsInOrder[0],
 });
 
@@ -176,7 +250,8 @@ for (const group of groupsInOrder) {
     type: 'options',
     noDataExpression: true,
     displayOptions: { show: { resource: [group] } },
-    options: cmds.map((cmd) => {
+    options: byName(
+      cmds.map((cmd) => {
       // Build the request URL, interpolating any path params.
       let url = cmd.endpoint.path;
       for (const f of fieldsFor(cmd)) {
@@ -189,14 +264,17 @@ for (const group of groupsInOrder) {
       const constBody = CONSTANT_BODY[cmd.name];
       if (constBody) request.body = constBody;
 
+      const name = humanize(cmd.subcommand);
       return {
-        name: humanize(cmd.subcommand),
+        name,
         value: cmd.subcommand,
-        action: cmd.description.split('.')[0],
-        description: cmd.description,
+        action: ACTION_LABELS[cmd.name] ?? name,
+        description: cleanDescription(cmd.description, 'string', name),
         routing: { request },
       };
     }),
+    'name',
+    ),
     default: cmds[0].subcommand,
   });
 
@@ -209,15 +287,17 @@ for (const group of groupsInOrder) {
     const optional = fields.filter((f) => !f.required);
 
     for (const f of required) {
+      const displayName = humanize(f.field);
       const prop: any = {
-        displayName: humanize(f.field),
+        displayName,
         name: f.field,
         type: f.type,
         required: true,
         default: defaultFor(f.type),
-        description: f.description,
         displayOptions: { show },
       };
+      const desc = cleanDescription(f.description, f.type, displayName);
+      if (desc) prop.description = desc;
       if (f.location !== 'path') {
         prop.routing = { send: { type: f.location, property: f.field } };
       }
@@ -232,19 +312,32 @@ for (const group of groupsInOrder) {
         placeholder: 'Add Field',
         default: {},
         displayOptions: { show },
-        options: optional.map((f) => {
-          const opt: any = {
-            displayName: humanize(f.field),
-            name: f.field,
-            type: f.type,
-            default: defaultFor(f.type),
-            description: f.description,
-          };
-          if (f.location !== 'path') {
-            opt.routing = { send: { type: f.location, property: f.field } };
-          }
-          return opt;
-        }),
+        options: byName(
+          optional.map((f) => {
+            const displayName = humanize(f.field);
+            const opt: any = {
+              displayName,
+              name: f.field,
+              type: f.type,
+              default: defaultFor(f.type),
+            };
+            // n8n has hard-coded expectations for a parameter named "limit".
+            if (f.field === 'limit') {
+              opt.type = 'number';
+              opt.typeOptions = { minValue: 1 };
+              opt.default = 50;
+              opt.description = 'Max number of results to return';
+            } else {
+              const desc = cleanDescription(f.description, f.type, displayName);
+              if (desc) opt.description = desc;
+            }
+            if (f.location !== 'path') {
+              opt.routing = { send: { type: f.location, property: f.field } };
+            }
+            return opt;
+          }),
+          'displayName',
+        ),
       });
     }
   }
@@ -278,10 +371,24 @@ const banner = `// AUTO-GENERATED by carly-cli/scripts/gen-n8n-node.ts — DO NO
 // Source of truth: carly-cli/src/commands/**.
 `;
 
+/**
+ * JSON.stringify quotes every key. n8n's verification lint
+ * (@n8n/eslint-plugin-community-nodes) walks the AST looking for identifier
+ * keys, so `"icon"` and `"subtitle"` read as absent and the node is rejected
+ * for missing properties it actually has. Unquote keys that are valid JS
+ * identifiers; the line anchor keeps this off anything inside a string value.
+ */
+function serialize(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(
+    /^(\s*)"([A-Za-z_$][A-Za-z0-9_$]*)":/gm,
+    '$1$2:',
+  );
+}
+
 const body = `import type { INodeType, INodeTypeDescription } from 'n8n-workflow';
 
 export class Carly implements INodeType {
-  description: INodeTypeDescription = ${JSON.stringify(description, null, 2)};
+  description: INodeTypeDescription = ${serialize(description)};
 }
 `;
 
