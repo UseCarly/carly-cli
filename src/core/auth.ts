@@ -1,7 +1,7 @@
 import { loadConfig } from './config.js';
 import { AuthError } from './errors.js';
 
-export const DEFAULT_API_BASE_URL = 'https://dashboard.carlyassistant.com';
+export const DEFAULT_API_BASE_URL = 'https://carlyassistant.com';
 
 export interface ResolvedAuth {
   apiKey: string;

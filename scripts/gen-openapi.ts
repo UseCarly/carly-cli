@@ -31,7 +31,7 @@ const allCommands: CommandDefinition[] = [
   ...bookingsCommands,
 ];
 
-const SERVER_URL = 'https://dashboard.carlyassistant.com/api/v1';
+const SERVER_URL = 'https://carlyassistant.com/api/v1';
 
 // ---- Zod -> OpenAPI schema -------------------------------------------------
 

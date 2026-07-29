@@ -36,7 +36,8 @@
     "gen:make": "tsx scripts/gen-make-app.ts",
     "gen:pipedream": "tsx scripts/gen-pipedream.ts",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && npm run fields:check",
+    "push:make": "node scripts/push-make-app.mjs"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.3.0",

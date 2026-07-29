@@ -33,7 +33,7 @@ const allCommands: CommandDefinition[] = [
   ...bookingsCommands,
 ];
 
-const BASE_URL = 'https://dashboard.carlyassistant.com/api/v1';
+const BASE_URL = 'https://carlyassistant.com/api/v1';
 
 const CONSTANT_BODY: Record<string, Record<string, unknown>> = {
   calendars_select: { selected: true },

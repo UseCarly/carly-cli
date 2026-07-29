@@ -35,11 +35,337 @@ const allCommands: CommandDefinition[] = [
   ...bookingsCommands,
 ];
 
-const BASE_URL = 'https://dashboard.carlyassistant.com/api/v1';
+// Apex host — matches the public docs at usecarly.com/developers. The
+// dashboard.* subdomain serves the same API but the docs are canonical.
+const BASE_URL = 'https://carlyassistant.com/api/v1';
 
 const CONSTANT_BODY: Record<string, Record<string, unknown>> = {
   calendars_select: { selected: true },
   calendars_unselect: { selected: false },
+};
+
+// ---- Module metadata -------------------------------------------------------
+// Make's naming conventions: labels are sentence case with a verb, article and
+// entity; descriptions are third person present and end in a period. `action`
+// is the CRUD type for Action modules (search modules don't take one).
+// https://developers.make.com/custom-apps-documentation/best-practices/naming-conventions
+
+type CrudAction = 'create' | 'read' | 'update' | 'delete';
+interface ModuleMeta {
+  label: string;
+  description: string;
+  group: string;
+  action?: CrudAction;
+  /** Key into RESPONSE_SHAPES — the entity this module returns. */
+  shape?: string;
+}
+
+const MODULE_META: Record<string, ModuleMeta> = {
+  whoami: {
+    label: 'Get profile',
+    description: 'Retrieves the account the API key belongs to.',
+    group: 'Profile',
+    action: 'read',
+    shape: 'profile',
+  },
+  booking_pages_list: {
+    label: 'List booking pages',
+    description: 'Lists your booking pages.',
+    group: 'Booking pages',
+    shape: 'bookingPage',
+  },
+  booking_pages_get: {
+    label: 'Get a booking page',
+    description: 'Retrieves a booking page by its event type ID.',
+    group: 'Booking pages',
+    action: 'read',
+    shape: 'bookingPage',
+  },
+  booking_pages_create: {
+    label: 'Create a booking page',
+    description: 'Creates a booking page.',
+    group: 'Booking pages',
+    action: 'create',
+    shape: 'bookingPage',
+  },
+  booking_pages_update: {
+    label: 'Update a booking page',
+    description: 'Updates a booking page.',
+    group: 'Booking pages',
+    action: 'update',
+    shape: 'bookingPage',
+  },
+  booking_pages_delete: {
+    label: 'Delete a booking page',
+    description: 'Deactivates a booking page.',
+    group: 'Booking pages',
+    action: 'delete',
+    shape: 'ok',
+  },
+  bookings_list: {
+    label: 'List bookings',
+    description: 'Lists your bookings.',
+    group: 'Bookings',
+    shape: 'booking',
+  },
+  bookings_get: {
+    label: 'Get a booking',
+    description: 'Retrieves a booking by its UID.',
+    group: 'Bookings',
+    action: 'read',
+    shape: 'booking',
+  },
+  calendars_list: {
+    label: 'List calendars',
+    description: 'Lists your connected calendars.',
+    group: 'Calendars',
+    shape: 'calendar',
+  },
+  calendars_select: {
+    label: 'Add a calendar to availability',
+    description: 'Adds a calendar to your availability.',
+    group: 'Calendars',
+    action: 'update',
+    shape: 'calendar',
+  },
+  calendars_unselect: {
+    label: 'Remove a calendar from availability',
+    description: 'Removes a calendar from your availability.',
+    group: 'Calendars',
+    action: 'update',
+    shape: 'calendar',
+  },
+  event_types_list: {
+    label: 'List event types',
+    description: 'Lists your event types.',
+    group: 'Event types',
+    shape: 'bookingPage',
+  },
+  slots_list: {
+    label: 'List slots',
+    description: 'Lists available booking slots in a time range.',
+    group: 'Slots',
+    shape: 'slot',
+  },
+};
+
+// Module names as they exist in the live Make app (carly-dqs4v5). These were
+// chosen by hand in the app builder and a module's name is fixed at creation,
+// so they don't match this repo's file names — and `listBookingPages` doesn't
+// even match the camelCase pattern the other thirteen follow. groups.json
+// references modules by NAME, so it has to use these, not the file names.
+const MAKE_MODULE_NAMES: Record<string, string> = {
+  whoami: 'whoami',
+  booking_pages_list: 'listBookingPages',
+  // The original bookingPagesGet/bookingsGet were created as Search modules;
+  // a get-by-ID should be an Action and Make fixes type at creation, so these
+  // are the Action replacements. The originals are retired, not deleted — a
+  // shared app can't drop a module.
+  booking_pages_get: 'getBookingPage',
+  booking_pages_create: 'bookingPagesCreate',
+  booking_pages_update: 'bookingPagesUpdate',
+  booking_pages_delete: 'bookingPagesDelete',
+  bookings_list: 'bookingsList',
+  bookings_get: 'getBooking',
+  calendars_list: 'calendarsList',
+  calendars_select: 'calendarsSelect',
+  calendars_unselect: 'calendarsUnselect',
+  event_types_list: 'eventTypesList',
+  slots_list: 'slotsList',
+  make_api_call: 'makeApiCall',
+};
+
+// ---- Response interfaces ---------------------------------------------------
+// Captured from live API responses (2026-07-29). `defaultColumns` only drives
+// the CLI's table view, so it's far too narrow for Make — every module needs an
+// interface matching its full actual output or downstream modules can't map
+// fields. /booking-pages and /event-types return the identical object.
+
+interface IField {
+  name: string;
+  type: string;
+  label: string;
+  spec?: unknown;
+}
+
+const ABBREVIATIONS = new Set(['id', 'uid', 'url', 'api', 'utc', 'crm']);
+
+/**
+ * Sentence case, with IDs and other abbreviations left uppercase. Handles both
+ * the snake_case the API returns and the camelCase the command defs use, so
+ * `event_type_id` and `eventTypeId` both render as "Event type ID".
+ */
+function outputLabel(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
+    .map((w, i) => {
+      const lower = w.toLowerCase();
+      if (ABBREVIATIONS.has(lower)) return lower.toUpperCase();
+      return i === 0 ? lower.charAt(0).toUpperCase() + lower.slice(1) : lower;
+    })
+    .join(' ');
+}
+
+const f = (name: string, type: string, spec?: unknown): IField => {
+  const field: IField = { name, type, label: outputLabel(name) };
+  if (spec !== undefined) field.spec = spec;
+  return field;
+};
+
+// Nested shapes the API returns inside booking pages / bookings.
+const AVAILABILITY_ROW = {
+  type: 'collection',
+  spec: [
+    f('days', 'array', { type: 'number' }),
+    f('start_time', 'text'),
+    f('end_time', 'text'),
+  ],
+};
+const WIDGET_ROW = {
+  type: 'collection',
+  spec: [f('type', 'text'), f('label', 'text'), f('url', 'text')],
+};
+const ATTENDEE_ROW = {
+  type: 'collection',
+  spec: [
+    f('name', 'text'),
+    f('email', 'text'),
+    f('phone', 'text'),
+    f('company', 'text'),
+    f('timezone', 'text'),
+  ],
+};
+
+const RESPONSE_SHAPES: Record<string, IField[]> = {
+  profile: [
+    f('user', 'collection', [f('id', 'number'), f('email', 'text')]),
+  ],
+  bookingPage: [
+    f('id', 'number'),
+    f('username', 'text'),
+    f('slug', 'text'),
+    f('title', 'text'),
+    f('description', 'text'),
+    f('length', 'number'),
+    f('is_active', 'boolean'),
+    f('booking_url', 'text'),
+    f('share_url', 'text'),
+    f('timezone', 'text'),
+    f('location', 'text'),
+    f('video_provider', 'text'),
+    f('calendar_key', 'text'),
+    f('schedule_id', 'number'),
+    f('min_notice_minutes', 'number'),
+    f('max_days_ahead', 'number'),
+    f('before_event_buffer', 'number'),
+    f('after_event_buffer', 'number'),
+    f('slot_interval', 'number'),
+    f('event_name_template', 'text'),
+    f('notification_email', 'text'),
+    f('collect_phone', 'boolean'),
+    f('collect_company', 'boolean'),
+    f('availability', 'array', AVAILABILITY_ROW),
+    f('availability_calendar_keys', 'array', { type: 'text' }),
+    f('duration_options', 'array', { type: 'number' }),
+    f('widgets', 'array', WIDGET_ROW),
+    // Free-form per-page question definitions — structure varies by page, so
+    // use Make's unknown-structure idiom (array with no spec).
+    f('custom_questions', 'array'),
+    f('created_at', 'date'),
+    f('updated_at', 'date'),
+  ],
+  booking: [
+    f('id', 'number'),
+    f('uid', 'text'),
+    f('status', 'text'),
+    f('title', 'text'),
+    f('start_time', 'date'),
+    f('end_time', 'date'),
+    f('username', 'text'),
+    f('event_type_id', 'number'),
+    f('event_type_slug', 'text'),
+    f('notes', 'text'),
+    f('cancellation_reason', 'text'),
+    f('attendees', 'array', ATTENDEE_ROW),
+    // Keyed by each page's custom question — unknown structure.
+    f('custom_answers', 'array'),
+    f('created_at', 'date'),
+    f('updated_at', 'date'),
+  ],
+  calendar: [
+    f('key', 'text'),
+    f('provider', 'text'),
+    f('account_email', 'text'),
+    f('label', 'text'),
+    f('selected', 'boolean'),
+  ],
+  slot: [f('date', 'text'), f('start', 'date'), f('end', 'date')],
+  // Deactivation is a soft delete — the page stays listed with is_active false.
+  ok: [f('ok', 'boolean')],
+};
+
+// ---- Nested input parameters ----------------------------------------------
+// These are modelled as real Make array parameters rather than text inputs run
+// through parseJSON. Two reasons:
+//
+//  1. It's the building experience Make's reviewer asked for — users pick
+//     fields instead of hand-writing JSON.
+//  2. It's the safe one. PATCH semantics were measured against the live API:
+//       key omitted -> all three preserved
+//       null        -> custom_questions and duration_options WIPED
+//                      (availability happens to be guarded server-side)
+//       []          -> all three WIPED, including availability, which leaves
+//                      the page unbookable
+//     parseJSON over an empty text input yields null, so an untouched field
+//     silently destroyed data. An untouched *array* parameter is absent from
+//     `parameters` entirely, so the key never reaches the body.
+//
+// A user who explicitly adds zero items still sends [] — that case really does
+// clear the field, which is the correct reading of an explicit empty list.
+const ARRAY_PARAM_SPECS: Record<string, unknown> = {
+  availability: {
+    type: 'collection',
+    spec: [
+      { name: 'days', type: 'array', label: 'Days', spec: { type: 'number' }, help: 'Sun=0 … Sat=6.' },
+      { name: 'start_time', type: 'text', label: 'Start time', help: 'HH:MM, 24-hour.' },
+      { name: 'end_time', type: 'text', label: 'End time', help: 'HH:MM, 24-hour.' },
+    ],
+  },
+  availabilityCalendarKeys: {
+    type: 'collection',
+    spec: [
+      { name: 'provider', type: 'text', label: 'Provider' },
+      { name: 'integration_id', type: 'uinteger', label: 'Integration ID' },
+      { name: 'calendar_id', type: 'text', label: 'Calendar ID' },
+    ],
+  },
+  customQuestions: {
+    type: 'collection',
+    spec: [
+      { name: 'label', type: 'text', label: 'Label', required: true },
+      { name: 'type', type: 'text', label: 'Type', required: true },
+      { name: 'required', type: 'boolean', label: 'Required' },
+    ],
+  },
+  durationOptions: { type: 'number' },
+  // Five widget variants, each with its own required fields, normalised and
+  // validated server-side. Rather than invent a union spec that would send
+  // junk keys, use Make's unknown-structure idiom: an array with no spec.
+  widgets: null,
+};
+
+// The CLI help for these fields talks about hand-written JSON/CSV, which no
+// longer describes the Make experience now that they're real array parameters.
+const ARRAY_PARAM_HELP: Record<string, string> = {
+  availability: 'Weekly availability. Each row is a set of days plus a start and end time.',
+  availabilityCalendarKeys:
+    'Calendars whose events block availability on this page. Distinct from the target calendar, which is where the booking gets written.',
+  customQuestions: 'Questions asked of the guest when they book.',
+  durationOptions: 'Bookable meeting lengths in minutes.',
+  widgets:
+    'Page content blocks, max 20. Each block is an object with a type — video, image, text, link or testimonial — plus that type\'s fields.',
 };
 
 // ---- Zod helpers -----------------------------------------------------------
@@ -117,6 +443,9 @@ function fieldsFor(cmd: CommandDefinition): FieldModel[] {
 // ---- Build module JSON -----------------------------------------------------
 
 function buildModule(cmd: CommandDefinition): Record<string, unknown> {
+  const meta = MODULE_META[cmd.name];
+  if (!meta) throw new Error(`No MODULE_META entry for "${cmd.name}" — add one.`);
+  const isSearch = cmd.subcommand === 'list';
   const fields = fieldsFor(cmd);
   const method = cmd.endpoint.method.toUpperCase();
 
@@ -130,7 +459,12 @@ function buildModule(cmd: CommandDefinition): Record<string, unknown> {
     } else if (f.location === 'query') {
       qs[f.field] = `{{parameters.${f.field}}}`;
     } else if (f.location === 'body') {
-      body[f.field] = f.json ? `{{parseJSON(parameters.${f.field})}}` : `{{parameters.${f.field}}}`;
+      // Array parameters map straight through; only legacy JSON-as-text fields
+      // still need parseJSON. See ARRAY_PARAM_SPECS for why that matters.
+      body[f.field] =
+        f.json && !(f.field in ARRAY_PARAM_SPECS)
+          ? `{{parseJSON(parameters.${f.field})}}`
+          : `{{parameters.${f.field}}}`;
     }
   }
   for (const [k, v] of Object.entries(CONSTANT_BODY[cmd.name] ?? {})) body[k] = v;
@@ -138,38 +472,54 @@ function buildModule(cmd: CommandDefinition): Record<string, unknown> {
   const communication: Record<string, unknown> = { url, method };
   if (Object.keys(qs).length) communication.qs = qs;
   if (Object.keys(body).length) communication.body = body;
-  // List endpoints return { items: [...] }; emit each item as a bundle.
-  communication.response =
-    cmd.subcommand === 'list'
-      ? { iterate: '{{body.items}}', output: '{{item}}' }
-      : { output: '{{body}}' };
+  // List endpoints return { items: [...] }; emit each item as a bundle. Search
+  // modules must also cap the bundle count via response.limit.
+  communication.response = isSearch
+    ? { iterate: '{{body.items}}', output: '{{item}}', limit: '{{parameters.limit}}' }
+    : { output: '{{body}}' };
 
-  const mappableParameters = fields.map((f) => {
-    const p: Record<string, unknown> = { name: f.field, type: f.type, label: humanize(f.field) };
-    if (f.required) p.required = true;
-    if (f.help) p.help = f.help;
-    return p;
-  });
+  // `limit` is a plain query option on some commands; Make wants it typed
+  // uinteger, optional, defaulted and placed last on every search module.
+  const mappableParameters = fields
+    .filter((f) => !(isSearch && f.field === 'limit'))
+    .map((f) => {
+      const isArrayParam = f.field in ARRAY_PARAM_SPECS;
+      const p: Record<string, unknown> = {
+        name: f.field,
+        type: isArrayParam ? 'array' : f.type,
+        label: outputLabel(f.field),
+      };
+      // A null spec is deliberate — Make's unknown-structure idiom.
+      if (isArrayParam && ARRAY_PARAM_SPECS[f.field] !== null) {
+        p.spec = ARRAY_PARAM_SPECS[f.field];
+      }
+      if (f.required) p.required = true;
+      const help = ARRAY_PARAM_HELP[f.field] ?? f.help;
+      if (help) p.help = help;
+      return p;
+    });
+  if (isSearch) {
+    mappableParameters.push({
+      name: 'limit',
+      type: 'uinteger',
+      label: 'Limit',
+      help: `Maximum number of ${meta.group.toLowerCase()} to return.`,
+      default: 10,
+    });
+  }
+
+  const metadata: Record<string, unknown> = {
+    label: meta.label,
+    description: meta.description,
+  };
+  if (meta.action) metadata.action = meta.action;
 
   return {
-    metadata: {
-      label: cmd.description.split('.')[0],
-      description: cmd.description,
-    },
+    metadata,
     connection: 'carly',
     communication,
     mappableParameters,
-    interface: (cmd.defaultColumns ?? []).map((c) => ({
-      name: c,
-      label: humanize(c),
-      type: /(_at|_time)$|^date$|^start$|^end$/.test(c)
-        ? 'date'
-        : /^is_|^selected$/.test(c)
-          ? 'boolean'
-          : /^id$|_id$|^length$/.test(c)
-            ? 'number'
-            : 'text',
-    })),
+    interface: meta.shape ? RESPONSE_SHAPES[meta.shape] : [],
   };
 }
 
@@ -183,11 +533,16 @@ mkdirSync(resolve(outDir, 'connection'), { recursive: true });
 const write = (rel: string, data: unknown) =>
   writeFileSync(resolve(outDir, rel), JSON.stringify(data, null, 2) + '\n');
 
+// The API reports failures as {"code": "...", "error": "..."} — there is no
+// `message` field, so "{{body.message}}" renders an empty error. Read
+// body.error first, fall back to body.message, then the bare status code.
+const ERROR_MESSAGE = '[{{statusCode}}] {{ifempty(body.error, ifempty(body.message, statusCode))}}';
+
 // BASE — baseUrl + bearer auth + sanitize the auth header from logs.
 write('base.imljson', {
   baseUrl: BASE_URL,
   headers: { authorization: 'Bearer {{connection.apiKey}}' },
-  response: { error: { message: '{{body.message}}' } },
+  response: { error: { message: ERROR_MESSAGE } },
   log: { sanitize: ['request.headers.authorization'] },
 });
 
@@ -207,7 +562,7 @@ write('connection/communication.imljson', {
   headers: { authorization: 'Bearer {{parameters.apiKey}}' },
   response: {
     valid: '{{statusCode === 200}}',
-    error: { message: '[{{statusCode}}] {{body.message}}' },
+    error: { message: ERROR_MESSAGE },
     // Label each connection by the account's email for easy identification.
     metadata: { type: 'email', value: '{{body.user.email}}' },
   },
@@ -226,8 +581,8 @@ for (const cmd of allCommands) {
 // authorized call to any Carly endpoint.
 write('modules/make_api_call.imljson', {
   metadata: {
-    label: 'Make an API Call',
-    description: 'Perform an arbitrary authorized call to the Carly API.',
+    label: 'Make an API call',
+    description: 'Performs an arbitrary authorized call to the Carly API.',
   },
   connection: 'carly',
   communication: {
@@ -263,6 +618,7 @@ write('modules/make_api_call.imljson', {
       name: 'headers',
       type: 'array',
       label: 'Headers',
+      help: "You don't need to add an authorization header — the app adds it for you.",
       spec: {
         type: 'collection',
         spec: [
@@ -289,7 +645,64 @@ write('modules/make_api_call.imljson', {
 });
 written.push('make_api_call (universal)');
 
+// GROUPS — Make renders modules ungrouped ("Other") without this file. Order
+// within a group is List, then Get, Create, Update, Delete.
+// https://developers.make.com/custom-apps-documentation/app-components/groups
+const GROUP_ORDER = ['Booking pages', 'Bookings', 'Event types', 'Slots', 'Calendars', 'Profile'];
+const RANK = ['list', 'get', 'create', 'update', 'delete', 'select', 'unselect'];
+
+const groups = GROUP_ORDER.map((label) => ({
+  label,
+  modules: allCommands
+    .filter((c) => MODULE_META[c.name]?.group === label)
+    .sort((a, b) => RANK.indexOf(a.subcommand) - RANK.indexOf(b.subcommand))
+    .map((c) => {
+      const live = MAKE_MODULE_NAMES[c.name];
+      if (!live) throw new Error(`No MAKE_MODULE_NAMES entry for "${c.name}" — add one.`);
+      return live;
+    }),
+})).filter((g) => g.modules.length > 0);
+// The reviewer asked for "Other" to be kept for the universal module rather
+// than dropping it — an omitted module would not surface in the UI at all.
+// Retired Search-typed get-by-ID modules, superseded by getBookingPage /
+// getBooking. They're hidden and deprecated but a shared app can't delete a
+// module, and Make appends any ungrouped module to "Other" anyway — so list
+// them explicitly, otherwise every push reports a spurious groups mismatch.
+const RETIRED_MODULES = ['bookingsGet', 'bookingPagesGet'];
+groups.push({ label: 'Other', modules: [MAKE_MODULE_NAMES.make_api_call, ...RETIRED_MODULES] });
+write('groups.json', groups);
+
+// MANIFEST — what `npm run push:make` needs to talk to the live app: which
+// repo file maps to which live module name, plus the metadata that lives on
+// the module record itself rather than in a section file.
+write('make-manifest.json', {
+  zone: 'us2',
+  app: 'carly-dqs4v5',
+  version: 1,
+  modules: [
+    ...allCommands.map((c) => ({
+      file: `modules/${c.name}.imljson`,
+      name: MAKE_MODULE_NAMES[c.name],
+      label: MODULE_META[c.name].label,
+      description: MODULE_META[c.name].description,
+      crud: MODULE_META[c.name].action ?? null,
+      // Make fixes a module's type at creation; these two are still Search
+      // modules in the live app and need recreating as Actions by hand.
+      wantsType: c.subcommand === 'list' ? 'search' : 'action',
+    })),
+    {
+      file: 'modules/make_api_call.imljson',
+      name: MAKE_MODULE_NAMES.make_api_call,
+      label: 'Make an API call',
+      description: 'Performs an arbitrary authorized call to the Carly API.',
+      crud: null,
+      wantsType: 'universal',
+    },
+  ],
+});
+
 console.log(
   `Generated ${outDir}\n` +
-    `  base.imljson, connection/, ${written.length} modules:\n    ${written.join(', ')}`,
+    `  base.imljson, connection/, groups.json, ${written.length} modules:\n    ${written.join(', ')}\n` +
+    `  groups: ${groups.map((g) => `${g.label} (${g.modules.length})`).join(', ')}`,
 );

@@ -69,7 +69,7 @@ Resolved in priority order:
 | 2 | `CARLY_API_KEY` env var | `export CARLY_API_KEY=carly_live_xxxx` |
 | 3 | Config file | `carly login` writes `~/.carly-cli/config.json` (mode `0600`) |
 
-Base URL defaults to `https://dashboard.carlyassistant.com` and can be overridden with `--api-base-url` or `CARLY_API_BASE_URL`.
+Base URL defaults to `https://carlyassistant.com` and can be overridden with `--api-base-url` or `CARLY_API_BASE_URL`. The legacy `dashboard.carlyassistant.com` host serves the same API and still works.
 
 Mint a key at `<base-url>/booking-pages` → expand **Generate API key** (under "Use Carly from your terminal or AI agent"). Scopes are enforced server-side; see [Scopes](#scopes) below.
 
