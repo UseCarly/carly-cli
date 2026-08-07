@@ -163,6 +163,7 @@ carly booking-pages create --title <title> [options]
   --after-event-buffer <min>
   --slot-interval <min>
   --availability <json>         # [{"days":[1,2,3,4,5],"start_time":"09:00","end_time":"17:00"}]
+  --date-overrides <json>       # [{"date":"2026-12-24","windows":[]}]  (empty windows = day blocked)
   --custom-questions <json>     # [{"label":"Company","type":"text","required":true}]
   --duration-options <list>     # CSV (15,30,60) or JSON array ([15,30,60])
 
@@ -174,6 +175,8 @@ carly booking-pages delete <event-type-id>             # Soft-delete: sets is_ac
 
 Nested-field notes:
 - `--availability` days are numbered Sunday=0, Monday=1, …, Saturday=6. Times are HH:MM in the page's timezone.
+- `--date-overrides` are one-off exceptions that **replace** the weekly hours for a single date, read in the page's timezone. `"windows": []` blocks the date entirely; otherwise only the listed windows are bookable. An override can also open a date the weekly pattern leaves closed. Max 100 overrides / 500 windows per page.
+- `--availability` and `--date-overrides` are independent — updating one leaves the other intact. Pass `--date-overrides '[]'` to clear every override without touching the weekly hours.
 - `--custom-questions` `type` is one of `text`, `textarea`, `number`, `phone`, `email`, `select`, `checkbox`, `radio`, `boolean`. `options` is only required for `select`/`radio`.
 - On `update`, any nested field you pass **replaces** the previous value wholesale — there is no partial merge.
 - MCP callers may pass these as native arrays/objects instead of stringified JSON.

@@ -107,9 +107,49 @@ const _availabilityCalendarKeySchema = z.object({
   calendar_id: z.string().min(1),
 });
 
+// One-off exceptions that REPLACE the weekly pattern for a single date, read
+// in the page's timezone. Zero windows blocks the whole day; otherwise only
+// the listed windows are bookable. Inner keys are snake_case to match what
+// `booking-pages get` returns, same round-tripping rationale as
+// _availabilityCalendarKeySchema.
+//
+// Cross-row rules (duplicate dates, overlapping windows, the 100-override /
+// 500-window caps) are left to the server, which reports them by date —
+// re-implementing them here would be a second source of truth that can drift.
+//
+// Unlike _availabilityRowSchema, the times are zero-padded here rather than
+// required to arrive padded: OverrideWindow on the server normalizes "9:00" to
+// "09:00", so rejecting it client-side would make the CLI stricter than the API
+// it fronts. Padding first also makes the start<end string compare correct —
+// unpadded, "9:00" sorts after "12:00".
+const _padHhmm = (v: string): string => {
+  const [h, m] = v.split(':');
+  return `${h.padStart(2, '0')}:${m}`;
+};
+const _hhmm = z
+  .string()
+  .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'must be HH:MM (00:00-23:59)')
+  .transform(_padHhmm);
+
+const _dateOverrideSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
+  windows: z
+    .array(
+      z
+        .object({ start_time: _hhmm, end_time: _hhmm })
+        .refine((w) => w.start_time < w.end_time, {
+          message: 'start_time must be before end_time',
+        }),
+    )
+    .default([]),
+});
+
 const _nestedBookingPageFields = {
   availability: z
     .preprocess(_jsonArrayPreprocessor, z.array(_availabilityRowSchema))
+    .optional(),
+  dateOverrides: z
+    .preprocess(_jsonArrayPreprocessor, z.array(_dateOverrideSchema))
     .optional(),
   customQuestions: z
     .preprocess(_jsonArrayPreprocessor, z.array(_customQuestionSchema))
@@ -126,6 +166,12 @@ const _nestedCliOptions = [
     field: 'availability',
     description:
       'Weekly availability as JSON: [{"days":[1,2,3,4,5],"start_time":"09:00","end_time":"17:00"}] (days: Sun=0..Sat=6)',
+  },
+  {
+    flags: '--date-overrides <json>',
+    field: 'dateOverrides',
+    description:
+      'One-off exceptions to the weekly hours, as JSON. Each entry replaces the weekly pattern for that date: [{"date":"2026-12-24","windows":[]}] blocks the day, [{"date":"2026-12-24","windows":[{"start_time":"09:00","end_time":"12:00"}]}] gives it custom hours',
   },
   {
     flags: '--custom-questions <json>',
@@ -151,6 +197,7 @@ const _nestedCliOptions = [
 
 const _nestedFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
   availability: 'body',
+  dateOverrides: 'body',
   customQuestions: 'body',
   durationOptions: 'body',
   widgets: 'body',
@@ -231,11 +278,12 @@ export const bookingPagesCreateCommand: CommandDefinition = {
   group: 'booking-pages',
   subcommand: 'create',
   description:
-    'Create a new booking page. Requires the `booking_pages:write` scope. Accepts nested fields (--availability, --custom-questions, --duration-options, --widgets) as JSON. Availability calendars are not settable on create — a new page uses the account-wide conflict-check selection until you narrow it with an update.',
+    'Create a new booking page. Requires the `booking_pages:write` scope. Accepts nested fields (--availability, --date-overrides, --custom-questions, --duration-options, --widgets) as JSON. Availability calendars are not settable on create — a new page uses the account-wide conflict-check selection until you narrow it with an update.',
   examples: [
     'carly booking-pages create --title "15 minute intro" --duration 15 --slug 15min',
     'carly booking-pages create --title "Deep dive" --duration 60 --video-provider google_meet --location "Remote"',
     `carly booking-pages create --title "Coffee chat" --duration 30 --availability '[{"days":[1,2,3,4,5],"start_time":"09:00","end_time":"17:00"}]'`,
+    `carly booking-pages create --title "Office hours" --duration 30 --date-overrides '[{"date":"2026-12-24","windows":[]},{"date":"2026-12-31","windows":[{"start_time":"09:00","end_time":"12:00"}]}]'`,
     `carly booking-pages create --title "Intake call" --duration 45 --custom-questions '[{"label":"Company","type":"text","required":true}]' --duration-options 30,45,60`,
     `carly booking-pages create --title "Demo" --duration 30 --widgets '[{"type":"text","heading":"What we cover","body":"A 30-minute walkthrough."}]'`,
   ],
@@ -265,12 +313,14 @@ export const bookingPagesUpdateCommand: CommandDefinition = {
   group: 'booking-pages',
   subcommand: 'update',
   description:
-    'Update an existing booking page by its event type ID. Requires the `booking_pages:write` scope. Only fields you pass are updated. Nested fields (--availability, --custom-questions, --duration-options, --widgets, --availability-calendar-keys) accept JSON and replace the previous value.',
+    'Update an existing booking page by its event type ID. Requires the `booking_pages:write` scope. Only fields you pass are updated. Nested fields (--availability, --date-overrides, --custom-questions, --duration-options, --widgets, --availability-calendar-keys) accept JSON and replace the previous value. --availability and --date-overrides are independent: saving one leaves the other untouched, and --date-overrides "[]" clears every override.',
   examples: [
     'carly booking-pages update 42 --description "Updated description"',
     'carly booking-pages update 42 --is-active false',
     'carly booking-pages update 42 --duration 45 --min-notice-minutes 60',
     `carly booking-pages update 42 --availability '[{"days":[1,2,3,4,5],"start_time":"10:00","end_time":"16:00"}]'`,
+    `carly booking-pages update 42 --date-overrides '[{"date":"2026-12-24","windows":[]}]'   # block Christmas Eve`,
+    `carly booking-pages update 42 --date-overrides '[]'   # clear every override, weekly hours unchanged`,
     'carly booking-pages update 42 --duration-options 15,30,60',
     `carly booking-pages update 42 --widgets '[{"type":"video","url":"https://youtu.be/dQw4w9WgXcQ","title":"How this works"}]'`,
     `carly booking-pages update 42 --availability-calendar-keys '[{"provider":"google","integration_id":12,"calendar_id":"primary"}]'`,
