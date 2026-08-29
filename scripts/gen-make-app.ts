@@ -147,6 +147,54 @@ const MODULE_META: Record<string, ModuleMeta> = {
     group: 'Slots',
     shape: 'slot',
   },
+  booking_pages_check_username: {
+    label: 'Check a username',
+    description: 'Checks whether a profile username is available.',
+    group: 'Booking pages',
+    action: 'read',
+    shape: 'usernameCheck',
+  },
+  schedules_list: {
+    label: 'List schedules',
+    description: 'Lists your working-hours schedules and those of the teams you manage.',
+    group: 'Schedules',
+    shape: 'schedule',
+  },
+  schedules_get: {
+    label: 'Get a schedule',
+    description: 'Retrieves a schedule by its ID.',
+    group: 'Schedules',
+    action: 'read',
+    shape: 'schedule',
+  },
+  schedules_create: {
+    label: 'Create a schedule',
+    description: 'Creates a working-hours schedule.',
+    group: 'Schedules',
+    action: 'create',
+    shape: 'schedule',
+  },
+  schedules_update: {
+    label: 'Update a schedule',
+    description: 'Updates a schedule; every booking page using it changes with it.',
+    group: 'Schedules',
+    action: 'update',
+    shape: 'schedule',
+  },
+  schedules_delete: {
+    label: 'Delete a schedule',
+    description: 'Deletes a schedule no booking page uses.',
+    group: 'Schedules',
+    action: 'delete',
+    shape: 'ok',
+  },
+  schedules_set_default: {
+    label: 'Set the default schedule',
+    description: 'Makes a schedule the default every booking page without its own follows.',
+    group: 'Schedules',
+    action: 'update',
+    shape: 'schedule',
+  },
 };
 
 // Module names as they exist in the live Make app (carly-dqs4v5). These were
@@ -172,6 +220,15 @@ const MAKE_MODULE_NAMES: Record<string, string> = {
   calendars_unselect: 'calendarsUnselect',
   event_types_list: 'eventTypesList',
   slots_list: 'slotsList',
+  // Added 2026-08-29 (carly-cli 0.3.2); created in the live app under these
+  // names by `npm run push:make`.
+  booking_pages_check_username: 'bookingPagesCheckUsername',
+  schedules_list: 'schedulesList',
+  schedules_get: 'schedulesGet',
+  schedules_create: 'schedulesCreate',
+  schedules_update: 'schedulesUpdate',
+  schedules_delete: 'schedulesDelete',
+  schedules_set_default: 'schedulesSetDefault',
   make_api_call: 'makeApiCall',
 };
 
@@ -223,6 +280,19 @@ const AVAILABILITY_ROW = {
     f('end_time', 'text'),
   ],
 };
+// A date override with zero windows is a fully blocked day — the empty array
+// is meaningful, not a missing value.
+const DATE_OVERRIDE_ROW = {
+  type: 'collection',
+  spec: [
+    f('date', 'text'),
+    f('windows', 'array', {
+      type: 'collection',
+      spec: [f('start_time', 'text'), f('end_time', 'text')],
+    }),
+  ],
+};
+
 const WIDGET_ROW = {
   type: 'collection',
   spec: [f('type', 'text'), f('label', 'text'), f('url', 'text')],
@@ -267,6 +337,7 @@ const RESPONSE_SHAPES: Record<string, IField[]> = {
     f('collect_phone', 'boolean'),
     f('collect_company', 'boolean'),
     f('availability', 'array', AVAILABILITY_ROW),
+    f('date_overrides', 'array', DATE_OVERRIDE_ROW),
     f('availability_calendar_keys', 'array', { type: 'text' }),
     f('duration_options', 'array', { type: 'number' }),
     f('widgets', 'array', WIDGET_ROW),
@@ -304,6 +375,21 @@ const RESPONSE_SHAPES: Record<string, IField[]> = {
   slot: [f('date', 'text'), f('start', 'date'), f('end', 'date')],
   // Deactivation is a soft delete — the page stays listed with is_active false.
   ok: [f('ok', 'boolean')],
+  usernameCheck: [f('available', 'boolean')],
+  schedule: [
+    f('id', 'number'),
+    f('name', 'text'),
+    f('timezone', 'text'),
+    f('resolved_timezone', 'text'),
+    f('is_default', 'boolean'),
+    f('owner', 'collection', [f('kind', 'text'), f('user_id', 'number'), f('organization_id', 'number')]),
+    f('summary', 'text'),
+    f('availability', 'array', AVAILABILITY_ROW),
+    f('date_overrides', 'array', DATE_OVERRIDE_ROW),
+    f('can_edit', 'boolean'),
+    // Pages using the schedule; shape varies by page kind, so no spec.
+    f('used_by', 'array'),
+  ],
 };
 
 // ---- Nested input parameters ----------------------------------------------
@@ -333,6 +419,27 @@ const ARRAY_PARAM_SPECS: Record<string, unknown> = {
       { name: 'end_time', type: 'text', label: 'End time', help: 'HH:MM, 24-hour.' },
     ],
   },
+  // Windows is an array of collections nested inside a collection. Leaving it
+  // empty is the "block this whole date" case, so it carries no `required`.
+  dateOverrides: {
+    type: 'collection',
+    spec: [
+      { name: 'date', type: 'text', label: 'Date', required: true, help: 'YYYY-MM-DD.' },
+      {
+        name: 'windows',
+        type: 'array',
+        label: 'Hours',
+        help: 'Leave empty to block the whole date.',
+        spec: {
+          type: 'collection',
+          spec: [
+            { name: 'start_time', type: 'text', label: 'Start time', help: 'HH:MM, 24-hour.' },
+            { name: 'end_time', type: 'text', label: 'End time', help: 'HH:MM, 24-hour.' },
+          ],
+        },
+      },
+    ],
+  },
   availabilityCalendarKeys: {
     type: 'collection',
     spec: [
@@ -360,6 +467,8 @@ const ARRAY_PARAM_SPECS: Record<string, unknown> = {
 // longer describes the Make experience now that they're real array parameters.
 const ARRAY_PARAM_HELP: Record<string, string> = {
   availability: 'Weekly availability. Each row is a set of days plus a start and end time.',
+  dateOverrides:
+    'One-off exceptions to the weekly hours. Each entry replaces the weekly pattern for that single date — add hours to change it, or leave the hours empty to block the date entirely.',
   availabilityCalendarKeys:
     'Calendars whose events block availability on this page. Distinct from the target calendar, which is where the booking gets written.',
   customQuestions: 'Questions asked of the guest when they book.',
