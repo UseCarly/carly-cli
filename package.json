@@ -1,7 +1,7 @@
 {
   "name": "carly-ai",
-  "version": "0.3.1",
-  "description": "Agent-native CLI and MCP server for Carly — the AI scheduling assistant. Read bookings, booking pages, event types, and slots from any MCP-compatible client or shell.",
+  "version": "0.3.2",
+  "description": "Agent-native CLI and MCP server for Carly — the AI scheduling assistant. Manage booking pages (every field of the public API, team pages included), working-hours schedules, bookings, event types, and slots from any MCP-compatible client or shell.",
   "type": "module",
   "bin": {
     "carly": "dist/index.js",
@@ -27,6 +27,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "fields:check": "tsx scripts/check-api-fields.ts",
     "dev": "tsx src/index.ts",
     "dev:mcp": "tsx src/mcp.ts",
     "gen:n8n": "tsx scripts/gen-n8n-node.ts",

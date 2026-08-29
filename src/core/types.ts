@@ -28,6 +28,8 @@ export interface CommandDefinition<TInput extends z.ZodObject<any> = z.ZodObject
   cliMappings: CliMapping;
   endpoint: { method: string; path: string };
   fieldMappings: Record<string, 'path' | 'query' | 'body'>;
+  /** API-key scope the endpoint demands (shown in help + generated docs). */
+  scope?: string;
   paginated?: boolean;
   /**
    * Columns shown when --output table is used for this command.

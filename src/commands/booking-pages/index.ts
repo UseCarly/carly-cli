@@ -40,7 +40,7 @@ export const bookingPagesGetCommand: CommandDefinition = {
 // Accepts either a native array (MCP callers pass JSON directly) or a
 // stringified JSON blob (CLI callers pass --flag '<json>'). Strings that
 // don't parse are passed through so Zod surfaces the shape error.
-const _jsonArrayPreprocessor = (val: unknown): unknown => {
+export const _jsonArrayPreprocessor = (val: unknown): unknown => {
   if (typeof val !== 'string') return val;
   try {
     return JSON.parse(val);
@@ -70,7 +70,7 @@ const _intListPreprocessor = (val: unknown): unknown => {
     });
 };
 
-const _availabilityRowSchema = z.object({
+export const _availabilityRowSchema = z.object({
   days: z.array(z.number().int().min(0).max(6)).min(1),
   start_time: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM'),
   end_time: z.string().regex(/^\d{2}:\d{2}$/, 'must be HH:MM'),
@@ -131,7 +131,7 @@ const _hhmm = z
   .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'must be HH:MM (00:00-23:59)')
   .transform(_padHhmm);
 
-const _dateOverrideSchema = z.object({
+export const _dateOverrideSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD'),
   windows: z
     .array(
@@ -205,7 +205,7 @@ const _nestedFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
 
 // Server-side Pydantic coerces "true"/"false" → bool. Accept both so MCP
 // callers passing a JSON bool and CLI callers passing a string both work.
-const _boolish = z.union([z.boolean(), z.enum(['true', 'false'])]);
+export const _boolish = z.union([z.boolean(), z.enum(['true', 'false'])]);
 
 // Zod schema for the write fields shared by create and update.
 // Nested fields (availability, customQuestions, durationOptions, widgets) are
@@ -218,7 +218,6 @@ const _scalarBookingPageFields = {
   videoProvider: z.string().optional(),
   calendarKey: z.string().optional(),
   timezone: z.string().optional(),
-  username: z.string().trim().toLowerCase().optional(),
   displayName: z.string().optional(),
   eventNameTemplate: z.string().optional(),
   minNoticeMinutes: z.coerce.number().int().nonnegative().optional(),
@@ -229,6 +228,48 @@ const _scalarBookingPageFields = {
   notificationEmail: z.string().trim().max(255).optional(),
   collectPhone: _boolish.optional(),
   collectCompany: _boolish.optional(),
+  // --- booking-pages-v2 + schedule library. Generated against the server's
+  // schemas/api_v1_fields.txt; `npm run fields:check` fails when they drift.
+  scheduleId: z.coerce.number().int().optional(),
+  bookingWindowMode: z.enum(['rolling', 'business_days', 'range']).optional(),
+  bookingWindowBusinessDays: z.coerce.number().int().optional(),
+  bookingWindowStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD').optional(),
+  bookingWindowEnd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be YYYY-MM-DD').optional(),
+  bookingLimitCount: z.coerce.number().int().optional(),
+  bookingLimitPeriod: z.enum(['day', 'week', 'month', 'year']).optional(),
+  bookingLimitDurationMinutes: z.coerce.number().int().optional(),
+  bookerActiveBookingLimit: z.coerce.number().int().optional(),
+  offsetStartMinutes: z.coerce.number().int().optional(),
+  onlyShowFirstAvailableSlot: _boolish.optional(),
+  disableGuests: _boolish.optional(),
+  hideCalendarNotes: _boolish.optional(),
+  hideCalendarEventDetails: _boolish.optional(),
+  hideOrganizerEmail: _boolish.optional(),
+  disableCancelling: _boolish.optional(),
+  disableRescheduling: _boolish.optional(),
+  minimumRescheduleNotice: z.coerce.number().int().optional(),
+  requiresConfirmation: _boolish.optional(),
+  confirmationThresholdMinutes: z.coerce.number().int().optional(),
+  successRedirectUrl: z.string().optional(),
+  forwardParamsSuccessRedirect: _boolish.optional(),
+  lockedTimezone: z.string().optional(),
+  color: z.string().optional(),
+  requiresPrivateLink: _boolish.optional(),
+  seatsPerTimeSlot: z.coerce.number().int().optional(),
+  seatsShowAttendees: _boolish.optional(),
+  seatsShowAvailabilityCount: _boolish.optional(),
+  recurrenceFrequency: z.enum(['weekly', 'monthly', 'yearly']).optional(),
+  recurrenceInterval: z.coerce.number().int().optional(),
+  recurrenceOccurrences: z.coerce.number().int().optional(),
+  reminderConfigs: z.preprocess(_jsonArrayPreprocessor, z.array(z.object({}).passthrough())).optional(),
+  schedulingType: z.enum(['collective', 'round_robin', 'managed']).optional(),
+  hosts: z.preprocess(_jsonArrayPreprocessor, z.array(z.object({ user_id: z.coerce.number().int().positive() }).passthrough())).optional(),
+  assignAllTeamMembers: _boolish.optional(),
+  memberFieldsUnlocked: _boolish.optional(),
+  rrResetInterval: z.enum(['day', 'month']).optional(),
+  rrTimestampBasis: z.enum(['created_at', 'start_time']).optional(),
+  include_no_show_in_rr_calculation: _boolish.optional(),
+  rescheduleWithSameRoundRobinHost: _boolish.optional(),
 };
 
 const _scalarCliOptions = [
@@ -239,7 +280,6 @@ const _scalarCliOptions = [
   { flags: '--video-provider <provider>', field: 'videoProvider', description: 'Video provider (google_meet, teams, zoom, ...)' },
   { flags: '--calendar-key <key>', field: 'calendarKey', description: 'Target calendar key (see `carly calendars list`)' },
   { flags: '--timezone <tz>', field: 'timezone', description: 'IANA timezone (e.g. America/New_York)' },
-  { flags: '--username <username>', field: 'username', description: 'Profile username (lowercase, a-z0-9-)' },
   { flags: '--display-name <name>', field: 'displayName', description: 'Public display name on the booking page' },
   { flags: '--event-name-template <tpl>', field: 'eventNameTemplate', description: 'Template for generated event titles' },
   { flags: '--min-notice-minutes <n>', field: 'minNoticeMinutes', description: 'Minimum notice before a booking (minutes)' },
@@ -250,6 +290,46 @@ const _scalarCliOptions = [
   { flags: '--notification-email <email>', field: 'notificationEmail', description: 'Send new-booking notifications here instead of the account email' },
   { flags: '--collect-phone <true|false>', field: 'collectPhone', description: 'Ask the guest for a phone number' },
   { flags: '--collect-company <true|false>', field: 'collectCompany', description: 'Ask the guest for a company name' },
+  { flags: '--schedule-id <n>', field: 'scheduleId', description: "Schedule this page books on (see `carly schedules list`); omit to follow your default" },
+  { flags: '--booking-window-mode <rolling|business_days|range>', field: 'bookingWindowMode', description: "How far ahead guests can book: rolling (calendar days), business_days, or range" },
+  { flags: '--booking-window-business-days <n>', field: 'bookingWindowBusinessDays', description: "Business days ahead when --booking-window-mode is business_days" },
+  { flags: '--booking-window-start <date>', field: 'bookingWindowStart', description: "First bookable date (YYYY-MM-DD) when --booking-window-mode is range" },
+  { flags: '--booking-window-end <date>', field: 'bookingWindowEnd', description: "Last bookable date (YYYY-MM-DD) when --booking-window-mode is range" },
+  { flags: '--booking-limit-count <n>', field: 'bookingLimitCount', description: "Max bookings per --booking-limit-period" },
+  { flags: '--booking-limit-period <day|week|month|year>', field: 'bookingLimitPeriod', description: "Period for the booking limits: day, week, month, or year" },
+  { flags: '--booking-limit-duration-minutes <n>', field: 'bookingLimitDurationMinutes', description: "Max booked minutes per --booking-limit-period" },
+  { flags: '--booker-active-booking-limit <n>', field: 'bookerActiveBookingLimit', description: "Max upcoming bookings one guest email may hold" },
+  { flags: '--offset-start-minutes <n>', field: 'offsetStartMinutes', description: "Shift every slot start by this many minutes" },
+  { flags: '--only-show-first-available-slot <true|false>', field: 'onlyShowFirstAvailableSlot', description: "Offer only the first free slot of each day" },
+  { flags: '--disable-guests <true|false>', field: 'disableGuests', description: "Do not let the booker add extra guests" },
+  { flags: '--hide-calendar-notes <true|false>', field: 'hideCalendarNotes', description: "Keep guest notes out of the calendar event" },
+  { flags: '--hide-calendar-event-details <true|false>', field: 'hideCalendarEventDetails', description: "Show the calendar event as \"Busy\"" },
+  { flags: '--hide-organizer-email <true|false>', field: 'hideOrganizerEmail', description: "Hide the organizer email where the provider allows it" },
+  { flags: '--disable-cancelling <true|false>', field: 'disableCancelling', description: "Guests cannot cancel" },
+  { flags: '--disable-rescheduling <true|false>', field: 'disableRescheduling', description: "Guests cannot reschedule" },
+  { flags: '--minimum-reschedule-notice <n>', field: 'minimumRescheduleNotice', description: "Minutes before start after which guests can no longer reschedule" },
+  { flags: '--requires-confirmation <true|false>', field: 'requiresConfirmation', description: "Bookings wait for host approval" },
+  { flags: '--confirmation-threshold-minutes <n>', field: 'confirmationThresholdMinutes', description: "With --requires-confirmation: auto-accept bookings this many minutes or more away" },
+  { flags: '--success-redirect-url <text>', field: 'successRedirectUrl', description: "Send guests to this URL after booking" },
+  { flags: '--forward-params-success-redirect <true|false>', field: 'forwardParamsSuccessRedirect', description: "Append booking details as query params to the success redirect" },
+  { flags: '--locked-timezone <text>', field: 'lockedTimezone', description: "Show times in this IANA timezone for every guest" },
+  { flags: '--color <text>', field: 'color', description: "Accent colour as #RRGGBB" },
+  { flags: '--requires-private-link <true|false>', field: 'requiresPrivateLink', description: "Only private links can book this page" },
+  { flags: '--seats-per-time-slot <n>', field: 'seatsPerTimeSlot', description: "Seats per occurrence (1 = one guest per slot)" },
+  { flags: '--seats-show-attendees <true|false>', field: 'seatsShowAttendees', description: "Show attendee names on seated slots" },
+  { flags: '--seats-show-availability-count <true|false>', field: 'seatsShowAvailabilityCount', description: "Show the remaining seat count" },
+  { flags: '--recurrence-frequency <weekly|monthly|yearly>', field: 'recurrenceFrequency', description: "Repeat bookings: weekly, monthly, or yearly" },
+  { flags: '--recurrence-interval <n>', field: 'recurrenceInterval', description: "Repeat every N periods" },
+  { flags: '--recurrence-occurrences <n>', field: 'recurrenceOccurrences', description: "Max occurrences in a recurring series" },
+  { flags: '--reminder-configs <json>', field: 'reminderConfigs', description: "Authored reminder emails as a JSON array; see the API reference for the shape" },
+  { flags: '--scheduling-type <collective|round_robin|managed>', field: 'schedulingType', description: "Team page kind: round_robin, collective, or managed" },
+  { flags: '--hosts <json>', field: 'hosts', description: "Team hosts as JSON: [{\"user_id\":12,\"is_fixed\":false,\"priority\":1,\"schedule_id\":null}]" },
+  { flags: '--assign-all-team-members <true|false>', field: 'assignAllTeamMembers', description: "Every active team member hosts this page" },
+  { flags: '--member-fields-unlocked <true|false>', field: 'memberFieldsUnlocked', description: "Managed template: members own their hours, location, and calendar" },
+  { flags: '--rr-reset-interval <day|month>', field: 'rrResetInterval', description: "Round-robin fairness reset: day or month" },
+  { flags: '--rr-timestamp-basis <created_at|start_time>', field: 'rrTimestampBasis', description: "Round-robin ordering basis: created_at or start_time" },
+  { flags: '--include-no-show-in-rr-calculation <true|false>', field: 'include_no_show_in_rr_calculation', description: "Count no-shows toward round-robin fairness" },
+  { flags: '--reschedule-with-same-round-robin-host <true|false>', field: 'rescheduleWithSameRoundRobinHost', description: "Reschedules stay with the original host" },
 ];
 
 const _scalarFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
@@ -260,7 +340,6 @@ const _scalarFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
   videoProvider: 'body',
   calendarKey: 'body',
   timezone: 'body',
-  username: 'body',
   displayName: 'body',
   eventNameTemplate: 'body',
   minNoticeMinutes: 'body',
@@ -271,6 +350,46 @@ const _scalarFieldMappings: Record<string, 'path' | 'query' | 'body'> = {
   notificationEmail: 'body',
   collectPhone: 'body',
   collectCompany: 'body',
+  scheduleId: 'body',
+  bookingWindowMode: 'body',
+  bookingWindowBusinessDays: 'body',
+  bookingWindowStart: 'body',
+  bookingWindowEnd: 'body',
+  bookingLimitCount: 'body',
+  bookingLimitPeriod: 'body',
+  bookingLimitDurationMinutes: 'body',
+  bookerActiveBookingLimit: 'body',
+  offsetStartMinutes: 'body',
+  onlyShowFirstAvailableSlot: 'body',
+  disableGuests: 'body',
+  hideCalendarNotes: 'body',
+  hideCalendarEventDetails: 'body',
+  hideOrganizerEmail: 'body',
+  disableCancelling: 'body',
+  disableRescheduling: 'body',
+  minimumRescheduleNotice: 'body',
+  requiresConfirmation: 'body',
+  confirmationThresholdMinutes: 'body',
+  successRedirectUrl: 'body',
+  forwardParamsSuccessRedirect: 'body',
+  lockedTimezone: 'body',
+  color: 'body',
+  requiresPrivateLink: 'body',
+  seatsPerTimeSlot: 'body',
+  seatsShowAttendees: 'body',
+  seatsShowAvailabilityCount: 'body',
+  recurrenceFrequency: 'body',
+  recurrenceInterval: 'body',
+  recurrenceOccurrences: 'body',
+  reminderConfigs: 'body',
+  schedulingType: 'body',
+  hosts: 'body',
+  assignAllTeamMembers: 'body',
+  memberFieldsUnlocked: 'body',
+  rrResetInterval: 'body',
+  rrTimestampBasis: 'body',
+  include_no_show_in_rr_calculation: 'body',
+  rescheduleWithSameRoundRobinHost: 'body',
 };
 
 export const bookingPagesCreateCommand: CommandDefinition = {
@@ -278,7 +397,7 @@ export const bookingPagesCreateCommand: CommandDefinition = {
   group: 'booking-pages',
   subcommand: 'create',
   description:
-    'Create a new booking page. Requires the `booking_pages:write` scope. Accepts nested fields (--availability, --date-overrides, --custom-questions, --duration-options, --widgets) as JSON. Availability calendars are not settable on create — a new page uses the account-wide conflict-check selection until you narrow it with an update.',
+    'Create a new booking page. Requires the `booking_pages:write` scope. Every field of the public API is a flag: hours (--availability/--date-overrides, or --schedule-id to reuse a library schedule), team pages (--organization-id with --scheduling-type/--hosts), limits, privacy, seats, recurrence and reminders. Nested fields (--availability, --date-overrides, --custom-questions, --duration-options, --widgets, --hosts, --reminder-configs) take JSON. Availability calendars are not settable on create — a new page uses the account-wide conflict-check selection until you narrow it with an update.',
   examples: [
     'carly booking-pages create --title "15 minute intro" --duration 15 --slug 15min',
     'carly booking-pages create --title "Deep dive" --duration 60 --video-provider google_meet --location "Remote"',
@@ -289,12 +408,18 @@ export const bookingPagesCreateCommand: CommandDefinition = {
   ],
   inputSchema: z.object({
     title: z.string().trim().min(1),
+    username: z.string().trim().toLowerCase().optional(),
+    scheduleName: z.string().optional(),
+    organizationId: z.coerce.number().int().optional(),
     ..._scalarBookingPageFields,
     ..._nestedBookingPageFields,
   }),
   cliMappings: {
     options: [
       { flags: '--title <title>', field: 'title', description: 'Page title (required)' },
+      { flags: '--username <username>', field: 'username', description: 'Profile username (lowercase, a-z0-9-); create only' },
+      { flags: '--schedule-name <text>', field: 'scheduleName', description: "Name for the schedule created from --availability/--timezone (create only)" },
+      { flags: '--organization-id <n>', field: 'organizationId', description: "Team this page belongs to (create only; makes it a team page)" },
       ..._scalarCliOptions,
       ..._nestedCliOptions,
     ],
@@ -302,6 +427,9 @@ export const bookingPagesCreateCommand: CommandDefinition = {
   endpoint: { method: 'POST', path: '/booking-pages' },
   fieldMappings: {
     title: 'body',
+    username: 'body',
+    scheduleName: 'body',
+    organizationId: 'body',
     ..._scalarFieldMappings,
     ..._nestedFieldMappings,
   },
@@ -386,10 +514,30 @@ export const bookingPagesDeleteCommand: CommandDefinition = {
   handler: (input, client) => executeCommand(bookingPagesDeleteCommand, input, client),
 };
 
+export const bookingPagesCheckUsernameCommand: CommandDefinition = {
+  name: 'booking_pages_check_username',
+  group: 'booking-pages',
+  subcommand: 'check-username',
+  description:
+    'Check whether a profile username is available before creating a page with --username. Requires the `booking_pages:write` scope.',
+  examples: ['carly booking-pages check-username acme-sales'],
+  inputSchema: z.object({
+    username: z.string().trim().toLowerCase().min(1),
+  }),
+  cliMappings: {
+    args: [{ name: 'username', field: 'username', required: true }],
+  },
+  endpoint: { method: 'GET', path: '/booking-pages/check-username' },
+  fieldMappings: { username: 'query' },
+  scope: 'booking_pages:write',
+  handler: (input, client) => executeCommand(bookingPagesCheckUsernameCommand, input, client),
+};
+
 export const bookingPagesCommands: CommandDefinition[] = [
   bookingPagesListCommand,
   bookingPagesGetCommand,
   bookingPagesCreateCommand,
   bookingPagesUpdateCommand,
   bookingPagesDeleteCommand,
+  bookingPagesCheckUsernameCommand,
 ];

@@ -45,6 +45,7 @@ carly profile whoami --pretty
 # 3. See what you have
 carly calendars list --output table
 carly booking-pages list --output table
+carly schedules list --output table
 carly bookings list --output table
 ```
 
@@ -140,7 +141,7 @@ carly calendars list            # Connected calendars (provider + account + key)
 
 Use `calendar_key` values from this list as the `--calendar-key` argument when creating/updating booking pages.
 
-### Booking pages (5 commands)
+### Booking pages (6 commands)
 
 ```bash
 carly booking-pages list
@@ -166,11 +167,36 @@ carly booking-pages create --title <title> [options]
   --date-overrides <json>       # [{"date":"2026-12-24","windows":[]}]  (empty windows = day blocked)
   --custom-questions <json>     # [{"label":"Company","type":"text","required":true}]
   --duration-options <list>     # CSV (15,30,60) or JSON array ([15,30,60])
+  --widgets <json>              # Page content blocks
+  --schedule-id <id>            # Book on a library schedule (see `carly schedules list`); omit to follow your default
+  --schedule-name <name>        # Name for the schedule created from --availability/--timezone
+  # Team pages
+  --organization-id <id> --scheduling-type <round_robin|collective|managed>
+  --hosts <json>                # [{"user_id":12,"is_fixed":false,"priority":1,"schedule_id":null}]
+  --assign-all-team-members <true|false>  --member-fields-unlocked <true|false>
+  --rr-reset-interval <day|month> --rr-timestamp-basis <created_at|start_time>
+  --include-no-show-in-rr-calculation <true|false> --reschedule-with-same-round-robin-host <true|false>
+  # Limits and windows
+  --booking-window-mode <rolling|business_days|range> --booking-window-business-days <n>
+  --booking-window-start <date> --booking-window-end <date>
+  --booking-limit-count <n> --booking-limit-period <day|week|month|year> --booking-limit-duration-minutes <n>
+  --booker-active-booking-limit <n> --offset-start-minutes <n> --only-show-first-available-slot <true|false>
+  # Guest controls and privacy
+  --requires-confirmation <true|false> --confirmation-threshold-minutes <n>
+  --disable-guests / --disable-cancelling / --disable-rescheduling <true|false> --minimum-reschedule-notice <n>
+  --hide-calendar-notes / --hide-calendar-event-details / --hide-organizer-email <true|false>
+  --requires-private-link <true|false> --locked-timezone <tz> --color <#RRGGBB>
+  --success-redirect-url <url> --forward-params-success-redirect <true|false>
+  # Seats, recurrence, reminders
+  --seats-per-time-slot <n> --seats-show-attendees <true|false> --seats-show-availability-count <true|false>
+  --recurrence-frequency <weekly|monthly|yearly> --recurrence-interval <n> --recurrence-occurrences <n>
+  --reminder-configs <json>
 
 carly booking-pages update <event-type-id> [options]   # Same flags as create, all optional
   --is-active <true|false>      # Enable or disable the page
 
 carly booking-pages delete <event-type-id>             # Soft-delete: sets is_active=false. Re-activate with `update <id> --is-active true`.
+carly booking-pages check-username <username>        # Is this profile username free?
 ```
 
 Nested-field notes:
@@ -180,6 +206,21 @@ Nested-field notes:
 - `--custom-questions` `type` is one of `text`, `textarea`, `number`, `phone`, `email`, `select`, `checkbox`, `radio`, `boolean`. `options` is only required for `select`/`radio`.
 - On `update`, any nested field you pass **replaces** the previous value wholesale — there is no partial merge.
 - MCP callers may pass these as native arrays/objects instead of stringified JSON.
+
+### Schedules (6 commands)
+
+Working hours live in a library of schedules, not on the page. You have one **default** (every page without `--schedule-id` follows it); a team can own shared schedules a team page imposes on every host. `booking-pages update --availability` edits the page's own schedule — or, for a page that follows your default, gives it a copy of its own.
+
+```bash
+carly schedules list --output table
+carly schedules get <schedule-id>                       # hours, overrides, timezone, and the pages using it
+carly schedules create --name "Working hours" --timezone America/New_York --availability '<json>'
+carly schedules create --name "Front desk" --organization-id 4 --timezone America/Chicago --availability '<json>'
+carly schedules create --for-user-id 388                # seed a 9-5 default for a team member with no hours
+carly schedules update <schedule-id> --timezone Europe/Berlin --availability '<json>' --date-overrides '<json>'
+carly schedules set-default <schedule-id>
+carly schedules delete <schedule-id>                    # refused while a page uses it
+```
 
 ### Event types
 

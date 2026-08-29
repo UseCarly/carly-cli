@@ -19,6 +19,7 @@ import { dirname, resolve } from 'node:path';
 import { profileCommands } from '../src/commands/profile/index.js';
 import { calendarsCommands } from '../src/commands/calendars/index.js';
 import { bookingPagesCommands } from '../src/commands/booking-pages/index.js';
+import { schedulesCommands } from '../src/commands/schedules/index.js';
 import { eventTypesCommands } from '../src/commands/event-types/index.js';
 import { slotsCommands } from '../src/commands/slots/index.js';
 import { bookingsCommands } from '../src/commands/bookings/index.js';
@@ -28,6 +29,7 @@ const allCommands: CommandDefinition[] = [
   ...profileCommands,
   ...calendarsCommands,
   ...bookingPagesCommands,
+  ...schedulesCommands,
   ...eventTypesCommands,
   ...slotsCommands,
   ...bookingsCommands,

@@ -11,6 +11,7 @@ import { registerCalendarsConnectCommand, registerSignupCommand } from './calend
 import { profileCommands } from './profile/index.js';
 import { calendarsCommands } from './calendars/index.js';
 import { bookingPagesCommands } from './booking-pages/index.js';
+import { schedulesCommands } from './schedules/index.js';
 import { eventTypesCommands } from './event-types/index.js';
 import { slotsCommands } from './slots/index.js';
 import { bookingsCommands } from './bookings/index.js';
@@ -19,6 +20,7 @@ export const allCommands: CommandDefinition[] = [
   ...profileCommands,
   ...calendarsCommands,
   ...bookingPagesCommands,
+  ...schedulesCommands,
   ...eventTypesCommands,
   ...slotsCommands,
   ...bookingsCommands,
