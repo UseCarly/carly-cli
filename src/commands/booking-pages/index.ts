@@ -520,7 +520,7 @@ export const bookingPagesCheckUsernameCommand: CommandDefinition = {
   subcommand: 'check-username',
   description:
     'Check whether a profile username is available before creating a page with --username. Requires the `booking_pages:write` scope.',
-  examples: ['carly booking-pages check-username acme-sales'],
+  examples: ['carly booking-pages check-username your-team'],
   inputSchema: z.object({
     username: z.string().trim().toLowerCase().min(1),
   }),
