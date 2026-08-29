@@ -413,7 +413,7 @@ function newBookingTrigger(): string {
       { key: 'created_at', label: 'Created At', type: 'datetime' },
       { key: 'cancellation_reason', label: 'Cancellation Reason', type: 'string' },
     ],
-    sample: { id: '293d2414-1a54-4364-8a03-90a1c7911e04', uid: '293d2414-1a54-4364-8a03-90a1c7911e04', status: 'accepted', title: 'Sample Guest <> Sarah', start_time: '2026-05-01T09:00:00Z', end_time: '2026-05-01T09:15:00Z', username: 'sarah', event_type_id: 42, event_type_slug: 'intro', notes: 'Looking forward to it.', attendee_name: 'Sample Guest', attendee_email: 'guest@calbotservice.com', attendee_phone: '', attendee_company: 'Acme Corp', attendee_timezone: 'America/New_York', custom_answers_json: '{"Company":"Sample Co","What do you want to discuss?":"The Zapier integration."}', created_at: '2026-05-01T08:00:00Z', cancellation_reason: '' },
+    sample: { id: '293d2414-1a54-4364-8a03-90a1c7911e04', uid: '293d2414-1a54-4364-8a03-90a1c7911e04', status: 'accepted', title: 'Sample Guest <> Sarah', start_time: '2026-05-01T09:00:00Z', end_time: '2026-05-01T09:15:00Z', username: 'sarah', event_type_id: 42, event_type_slug: 'intro', notes: 'Looking forward to it.', attendee_name: 'Sample Guest', attendee_email: 'guest@calbotservice.com', attendee_phone: '', attendee_company: 'Sample Co', attendee_timezone: 'America/New_York', custom_answers_json: '{"Company":"Sample Co","What do you want to discuss?":"The Zapier integration."}', created_at: '2026-05-01T08:00:00Z', cancellation_reason: '' },
   },
 }`;
 }
