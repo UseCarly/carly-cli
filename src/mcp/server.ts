@@ -2,15 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { resolveAuth } from '../core/auth.js';
 import { CarlyClient } from '../core/client.js';
+import { version } from '../core/version.js';
 import { allCommands } from '../commands/index.js';
 
-export async function startMcpServer(): Promise<void> {
-  const { apiKey, baseUrl } = await resolveAuth();
-  const client = new CarlyClient({ apiKey, baseUrl });
-
+export function createMcpServer(client: CarlyClient): McpServer {
   const server = new McpServer({
-    name: 'carly',
-    version: '0.1.0',
+    name: 'Carly Forms & Bookings',
+    version,
   });
 
   for (const cmdDef of allCommands) {
@@ -19,11 +17,17 @@ export async function startMcpServer(): Promise<void> {
       {
         description: cmdDef.description,
         inputSchema: cmdDef.inputSchema.shape,
+        annotations: cmdDef.annotations ?? {
+          readOnlyHint: cmdDef.endpoint.method === 'GET',
+          destructiveHint: ['DELETE', 'PATCH', 'PUT'].includes(cmdDef.endpoint.method),
+          openWorldHint: true,
+        },
       },
       async (args: Record<string, unknown>) => {
         try {
-          const result = await cmdDef.handler(args as any, client);
+          const result = await cmdDef.handler(cmdDef.inputSchema.parse(args), client);
           return {
+            ...(result && typeof result === 'object' && 'error' in result ? { isError: true } : {}),
             content: [
               {
                 type: 'text' as const,
@@ -49,11 +53,17 @@ export async function startMcpServer(): Promise<void> {
     );
   }
 
+  return server;
+}
+
+export async function startMcpServer(opts: { apiKeyFlag?: string; baseUrlFlag?: string } = {}): Promise<void> {
+  const { apiKey, baseUrl } = await resolveAuth(opts);
+  const server = createMcpServer(new CarlyClient({ apiKey, baseUrl }));
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
   console.error(
-    `Carly MCP server started. ${allCommands.length} tool(s) registered:\n` +
+    `Carly Forms & Bookings MCP started. ${allCommands.length} tool(s) registered:\n` +
       allCommands.map((c) => `  - ${c.name}`).join('\n'),
   );
 }

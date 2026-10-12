@@ -8,7 +8,7 @@
  * build — instead of shipping unreachable, which is how three fields went
  * unexposed for a week in July 2026.
  *
- *   npm run fields:check                       # sibling checkout ../cal-bot-new
+ *   npm run fields:check                       # sibling checkout when present, otherwise committed snapshot
  *   CARLY_API_FIELDS_FILE=/path/to/api_v1_fields.txt npm run fields:check
  */
 import { existsSync, readFileSync } from 'node:fs';
@@ -17,11 +17,13 @@ import { fileURLToPath } from 'node:url';
 
 import { bookingPagesCreateCommand, bookingPagesUpdateCommand } from '../src/commands/booking-pages/index.js';
 import { schedulesCreateCommand, schedulesUpdateCommand } from '../src/commands/schedules/index.js';
+import { formsCreateCommand, formsUpdateCommand } from '../src/commands/forms/index.js';
 import type { CommandDefinition } from '../src/core/types.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const file =
-  process.env.CARLY_API_FIELDS_FILE ?? resolve(here, '..', '..', 'cal-bot-new', 'schemas', 'api_v1_fields.txt');
+const sibling = resolve(here, '..', '..', 'cal-bot-new', 'schemas', 'api_v1_fields.txt');
+const file = process.env.CARLY_API_FIELDS_FILE ??
+  (existsSync(sibling) ? sibling : resolve(here, '..', 'schemas', 'api_v1_fields.txt'));
 
 // Server model → the command that posts it, plus fields the registry names
 // differently on purpose (CLI key → server key) or deliberately leaves out.
@@ -44,6 +46,8 @@ const PAIRS: Array<{
   },
   { model: 'ScheduleCreateRequest', command: schedulesCreateCommand },
   { model: 'ScheduleUpdateRequest', command: schedulesUpdateCommand },
+  { model: 'FormCreateRequest', command: formsCreateCommand },
+  { model: 'FormUpdateRequest', command: formsUpdateCommand },
 ];
 
 const snake = (s: string): string => s.replace(/(?<!^)(?=[A-Z])/g, '_').toLowerCase();

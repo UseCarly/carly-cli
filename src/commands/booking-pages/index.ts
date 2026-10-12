@@ -436,6 +436,14 @@ export const bookingPagesCreateCommand: CommandDefinition = {
   handler: (input, client) => executeCommand(bookingPagesCreateCommand, input, client),
 };
 
+// Null restores defaults / clears optional settings. CLI uses the literal null;
+// MCP clients pass native null. Required controls still validate server-side.
+function clearable<T extends z.ZodRawShape>(shape: T): T {
+  return Object.fromEntries(Object.entries(shape).map(([key, schema]) => [
+    key, z.preprocess((value) => value === 'null' ? null : value, schema.nullable()),
+  ])) as unknown as T;
+}
+
 export const bookingPagesUpdateCommand: CommandDefinition = {
   name: 'booking_pages_update',
   group: 'booking-pages',
@@ -461,10 +469,10 @@ export const bookingPagesUpdateCommand: CommandDefinition = {
     // so a new page inherits the account-wide "check for conflicts on"
     // selection until you narrow it here.
     availabilityCalendarKeys: z
-      .preprocess(_jsonArrayPreprocessor, z.array(_availabilityCalendarKeySchema))
+      .preprocess((value) => value === 'null' ? null : _jsonArrayPreprocessor(value), z.array(_availabilityCalendarKeySchema).nullable())
       .optional(),
-    ..._scalarBookingPageFields,
-    ..._nestedBookingPageFields,
+    ...clearable(_scalarBookingPageFields),
+    ...clearable(_nestedBookingPageFields),
   }),
   cliMappings: {
     args: [{ name: 'event-type-id', field: 'eventTypeId', required: true }],

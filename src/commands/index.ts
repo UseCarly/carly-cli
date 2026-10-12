@@ -15,6 +15,8 @@ import { schedulesCommands } from './schedules/index.js';
 import { eventTypesCommands } from './event-types/index.js';
 import { slotsCommands } from './slots/index.js';
 import { bookingsCommands } from './bookings/index.js';
+import { formsCommands } from './forms/index.js';
+import { bookingControlCommands } from './booking-controls/index.js';
 
 export const allCommands: CommandDefinition[] = [
   ...profileCommands,
@@ -24,6 +26,8 @@ export const allCommands: CommandDefinition[] = [
   ...eventTypesCommands,
   ...slotsCommands,
   ...bookingsCommands,
+  ...formsCommands,
+  ...bookingControlCommands,
 ];
 
 export function registerAllCommands(program: Command): void {
@@ -36,10 +40,11 @@ export function registerAllCommands(program: Command): void {
   // MCP server start command.
   program
     .command('mcp')
-    .description('Start the Carly MCP server (stdio transport, for AI agents)')
-    .action(async () => {
+    .description('Start Carly Forms & Bookings MCP (the same commands over stdio)')
+    .action(async (_opts, command: Command) => {
       const { startMcpServer } = await import('../mcp/server.js');
-      await startMcpServer();
+      const opts = command.optsWithGlobals();
+      await startMcpServer({ apiKeyFlag: opts.apiKey, baseUrlFlag: opts.apiBaseUrl });
     });
 
   // Group CommandDefinitions by their `group` field.
@@ -123,6 +128,7 @@ export function registerAllCommands(program: Command): void {
 
           const result = await cmdDef.handler(parsed.data, client);
           output(result, globalOpts, cmdDef.defaultColumns);
+          if (result && typeof result === 'object' && 'error' in result) process.exitCode = 1;
         } catch (err) {
           outputError(err, globalOpts);
         }

@@ -1,11 +1,13 @@
 import { AuthError, NotFoundError, RateLimitError, ServerError, ValidationError } from './errors.js';
 import { DEFAULT_API_BASE_URL } from './auth.js';
 
+import { version } from './version.js';
+
 const API_PATH_PREFIX = '/api/v1';
 const DEFAULT_TIMEOUT = 30_000;
 const WRITE_TIMEOUT = 15_000;
 const MAX_RETRIES = 3;
-const USER_AGENT = 'carly-ai/0.2.1';
+const USER_AGENT = `carly-ai/${version}`;
 
 export interface CarlyClientOptions {
   apiKey: string;
@@ -39,7 +41,7 @@ export class CarlyClient {
   private async request<T>(
     method: string,
     path: string,
-    opts: { query?: Record<string, unknown>; body?: unknown } = {},
+    opts: { query?: Record<string, unknown>; body?: unknown; form?: FormData } = {},
     attempt = 0,
   ): Promise<T> {
     const isWrite = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase());
@@ -68,10 +70,12 @@ export class CarlyClient {
     const timer = setTimeout(() => controller.abort(), timeout);
 
     try {
+      const headers = this.headers();
+      if (opts.form) delete headers['Content-Type'];
       const res = await fetch(url, {
         method: method.toUpperCase(),
-        headers: this.headers(),
-        body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+        headers,
+        body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
         signal: controller.signal,
       });
 
@@ -101,14 +105,14 @@ export class CarlyClient {
         if (res.status === 400 || res.status === 422) throw new ValidationError(msg);
         if (res.status === 429) {
           const retryAfter = Number(res.headers.get('retry-after') ?? 60);
-          if (attempt < this.maxRetries) {
+          if (!isWrite && attempt < this.maxRetries) {
             await sleep(retryAfter * 1000);
             return this.request<T>(method, path, opts, attempt + 1);
           }
           throw new RateLimitError(msg, retryAfter);
         }
         if (res.status >= 500) {
-          if (attempt < this.maxRetries) {
+          if (!isWrite && attempt < this.maxRetries) {
             await sleep(Math.pow(2, attempt) * 1000);
             return this.request<T>(method, path, opts, attempt + 1);
           }
@@ -121,7 +125,7 @@ export class CarlyClient {
     } catch (err: any) {
       clearTimeout(timer);
       if (err.name === 'AbortError') {
-        if (attempt < this.maxRetries) {
+        if (!isWrite && attempt < this.maxRetries) {
           await sleep(1000 * (attempt + 1));
           return this.request<T>(method, path, opts, attempt + 1);
         }
@@ -146,6 +150,12 @@ export class CarlyClient {
 
   post<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>('POST', path, { body });
+  }
+
+  upload<T>(path: string, content: Uint8Array, mimeType: string): Promise<T> {
+    const form = new FormData();
+    form.append('file', new Blob([new Uint8Array(content)], { type: mimeType }), 'logo');
+    return this.request<T>('POST', path, { form });
   }
 
   patch<T>(path: string, body?: unknown): Promise<T> {

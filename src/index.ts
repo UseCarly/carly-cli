@@ -1,15 +1,13 @@
 import { Command } from 'commander';
-import { createRequire } from 'node:module';
+import { version } from './core/version.js';
 import { registerAllCommands } from './commands/index.js';
 
-const require = createRequire(import.meta.url);
-const { version } = require('../package.json');
 
 const program = new Command();
 
 program
   .name('carly')
-  .description('Agent-native CLI and MCP server for Carly — the AI scheduling assistant')
+  .description('Carly Forms & Bookings — manage forms, booking pages and availability from your terminal or MCP client')
   .version(version)
   .option('--api-key <key>', 'Carly API key (overrides env/config)')
   .option('--api-base-url <url>', 'Override the Carly API base URL')

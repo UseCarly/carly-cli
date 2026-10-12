@@ -30,6 +30,7 @@ export interface CommandDefinition<TInput extends z.ZodObject<any> = z.ZodObject
   fieldMappings: Record<string, 'path' | 'query' | 'body'>;
   /** API-key scope the endpoint demands (shown in help + generated docs). */
   scope?: string;
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; openWorldHint?: boolean; idempotentHint?: boolean };
   paginated?: boolean;
   /**
    * Columns shown when --output table is used for this command.

@@ -1,7 +1,7 @@
 {
   "name": "carly-ai",
-  "version": "0.3.2",
-  "description": "Agent-native CLI and MCP server for Carly — the AI scheduling assistant. Manage booking pages (every field of the public API, team pages included), working-hours schedules, bookings, event types, and slots from any MCP-compatible client or shell.",
+  "version": "0.4.0",
+  "description": "Carly Forms & Bookings CLI and MCP server. Manage booking pages, forms, routing, reminders, branding, working-hours schedules and submissions through one shared command registry.",
   "type": "module",
   "bin": {
     "carly": "dist/index.js",
@@ -37,7 +37,8 @@
     "gen:pipedream": "tsx scripts/gen-pipedream.ts",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run build && npm run fields:check",
-    "push:make": "node scripts/push-make-app.mjs"
+    "push:make": "node scripts/push-make-app.mjs",
+    "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.3.0",
@@ -63,7 +64,9 @@
     "calendar",
     "bookings",
     "agent",
-    "ai"
+    "ai",
+    "forms",
+    "routing"
   ],
   "license": "MIT"
 }

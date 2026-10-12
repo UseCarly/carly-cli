@@ -16,7 +16,7 @@ export async function executeCommand(
 
   for (const [field, location] of Object.entries(def.fieldMappings)) {
     const value = input[field];
-    if (value === undefined || value === null) continue;
+    if (value === undefined || (value === null && location !== 'body')) continue;
 
     if (location === 'path') {
       path = path.replace(`{${field}}`, encodeURIComponent(String(value)));

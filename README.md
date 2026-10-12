@@ -2,11 +2,13 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Agent-native CLI and MCP server for [Carly](https://www.usecarly.com) — the AI scheduling assistant. Read and manage booking pages, event types, calendars, and bookings from your shell or any MCP-compatible client.
+**Carly Forms & Bookings** is the existing Carly CLI, expanded to manage forms alongside booking pages. The `carly` command, npm package `carly-ai`, saved credentials and existing MCP tool names stay compatible.
 
-11 tools across 5 resource groups. Same command definitions drive the CLI and the MCP server, so there is no drift between human and agent interfaces.
+One command registry drives both the shell and `carly mcp`. It covers booking pages and their settings, working-hours schedules, private links, reminders, branding, team routing attributes, booking workflow connections, Calendly imports, forms and form submissions. Calendar, identity, slot and booking reads remain available for these workflows.
 
-Works with Google Calendar, Outlook, and Zoom.
+This is the local stdio MCP version of the CLI. The general Carly and Carly Teams hosted MCPs are separate products with their own setup; this package does not proxy those tools.
+
+Version 0.4 adds form and booking-control commands that require the corresponding `/api/v1/forms` and booking-control API routes on your Carly server. Updating this package does not deploy that backend. Older servers continue to support the existing commands and may return 404 for the new ones.
 
 ## Install
 
@@ -30,7 +32,7 @@ npm link       # exposes `carly` on PATH
 ```bash
 carly signup                  # opens Google OAuth (use --with microsoft for Outlook)
 # ... approve in browser, then:
-carly login                   # paste the API key you minted at /booking-pages (expand "Generate API key")
+carly login                   # paste a personal API key from /integrations (enable forms scopes for forms)
 ```
 
 **Already have a Carly account?**
@@ -47,6 +49,7 @@ carly calendars list --output table
 carly booking-pages list --output table
 carly schedules list --output table
 carly bookings list --output table
+carly forms list --output table
 ```
 
 ### Connect additional calendars / video providers
@@ -71,11 +74,11 @@ Resolved in priority order:
 
 Base URL defaults to `https://carlyassistant.com` and can be overridden with `--api-base-url` or `CARLY_API_BASE_URL`. The legacy `dashboard.carlyassistant.com` host serves the same API and still works.
 
-Mint a key at `<base-url>/booking-pages` → expand **Generate API key** (under "Use Carly from your terminal or AI agent"). Scopes are enforced server-side; see [Scopes](#scopes) below.
+Mint a personal key at `<base-url>/integrations#api-key-create-form` and select the scopes you need. Forms require `forms:read` and/or `forms:write`; these scopes are off by default. Booking keys can also be created on the booking-pages screen. Team credentials stay within their team and cannot access personal forms. Scopes and live resource permissions are enforced server-side; see [Scopes](#scopes) below.
 
 ## MCP server setup
 
-`carly mcp` starts an MCP server over stdio that exposes every CLI command as a tool to any MCP-compatible client.
+`carly mcp` starts an MCP server over stdio that exposes every API command in the shared registry as a tool to any MCP-compatible client.
 
 ### Claude Code
 
@@ -92,7 +95,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 ```json
 {
   "mcpServers": {
-    "carly": {
+    "carly-forms-bookings": {
       "command": "carly",
       "args": ["mcp"],
       "env": {
@@ -110,7 +113,7 @@ Add to `.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "carly": {
+    "carly-forms-bookings": {
       "command": "carly",
       "args": ["mcp"],
       "env": {
@@ -141,7 +144,7 @@ carly calendars list            # Connected calendars (provider + account + key)
 
 Use `calendar_key` values from this list as the `--calendar-key` argument when creating/updating booking pages.
 
-### Booking pages (6 commands)
+### Booking pages
 
 ```bash
 carly booking-pages list
@@ -218,6 +221,7 @@ carly schedules create --name "Working hours" --timezone America/New_York --avai
 carly schedules create --name "Front desk" --organization-id 4 --timezone America/Chicago --availability '<json>'
 carly schedules create --for-user-id 388                # seed a 9-5 default for a team member with no hours
 carly schedules update <schedule-id> --timezone Europe/Berlin --availability '<json>' --date-overrides '<json>'
+carly schedules duplicate <schedule-id> --data '{"name":"Summer hours"}'
 carly schedules set-default <schedule-id>
 carly schedules delete <schedule-id>                    # refused while a page uses it
 ```
@@ -254,6 +258,68 @@ carly bookings get <uid>
 
 `bookings:write` (create, cancel, reschedule) is intentionally not exposed on this CLI or the MCP surface; use the web dashboard.
 
+### Forms
+
+```bash
+carly forms list
+carly forms get 42
+carly forms create --name "Watch the video" \
+  --form-fields '[{"key":"email","label":"Email","type":"email","required":true}]' \
+  --routes '{"rules":[],"fallback":{"type":"redirect","url":"https://example.com/watch"}}'
+carly forms update 42 --form-fields @fields.json --notify-email false
+carly forms update 42 --routes null                 # clear routing
+carly forms update 42 --status paused
+carly forms submissions 42 --limit 50 --offset 0
+carly forms routing-targets
+carly forms crm-fields
+carly forms phone-regions
+carly forms test-routing --form-fields @fields.json --routes @routes.json --answers '{"email":"guest@example.com"}'
+carly forms upload-logo --content-base64 @logo.png --mime-type image/png
+carly forms delete 42
+```
+
+`--form-fields` edits the form; `--fields` retains its existing output-filtering meaning. Create and update also support `--intro-text`, `--submit-label`, `--success-message`, `--legal`, `--appearance`, `--webhook-url` and `--status`. Nested JSON accepts inline JSON or `@file`; MCP clients can supply native objects and arrays. Save the logo upload's `logo_key` in `appearance.logo_key`. Send an empty webhook URL to remove a webhook. Only supplied settings change, and explicit `null` clears routing, legal or appearance. Keep existing field keys when editing labels so routing and workflows retain their references.
+
+Removing workflow-bound fields requires `forms update --force`. Deleting a form with dependent workflows requires `forms delete --force`, which pauses those workflows and permanently deletes the form and its submissions.
+
+### Booking controls
+
+These commands use the same validation and permissions as the booking editor. `--data` accepts the documented JSON body or `@file`. Run each command with `--help` for its body shape.
+
+```bash
+carly private-links list 7
+carly private-links create 7 --data '{"max_usage_count":1}'
+carly private-links revoke 7 12
+carly booking-reminders preview 7 --data @reminder.json
+carly booking-reminders test 7 --data @reminder.json
+carly booking-reminders insights 7
+carly booking-connections list 7
+carly booking-connections setup 7 --template-id TEMPLATE_ID
+carly booking-connections create 7 --data @connection.json
+carly booking-branding get
+carly booking-branding update --data '{"display_name":"My business"}'
+carly booking-branding upload-logo --content-base64 @logo.png --mime-type image/png
+carly booking-branding delete-logo
+carly booking-branding set-removal 2 --data '{"hide_carly_branding":true}'
+carly booking-attributes list 2
+carly booking-attributes create 2 --data @attribute.json
+carly booking-attributes update 2 4 --data '{"enabled":false}'
+carly booking-attributes assign 2 3 4 --data '{"values":["East"],"weight":100}'
+carly booking-attributes delete 2 4
+carly booking-import preview --data @calendly-token.json
+carly booking-import calendly --data @calendly-import.json
+```
+
+Branding commands accept `--org <id>` for an authorized team. Attribute assignment arguments are organization ID, membership ID, then attribute ID; use option IDs for select attributes and scalar values for text/number attributes. Reminder tests send to your own email and retain the server's rate limits. Private-link URLs grant booking access; keep them private.
+
+Booking page create/update already include redirect URLs, forwarded query parameters, recurring meetings, team hosts, routing rules, custom questions, reminders, availability, limits and content blocks. Use `--help` for the complete options. For example:
+
+```bash
+carly booking-pages update 7 --success-redirect-url https://example.com/watch
+carly booking-pages update 7 --success-redirect-url null
+carly booking-pages update 7 --recurrence-frequency null
+```
+
 ## Output formats
 
 Every data-returning command accepts these global/per-command flags:
@@ -287,8 +353,11 @@ carly bookings list --fields uid,status,start_time --pretty
 
 | Scope | Needed for |
 |-------|------------|
-| `booking_pages:read` | `calendars list`, `booking-pages list/get`, `event-types list` (own), `slots list` (own event type) |
-| `booking_pages:write` | `booking-pages create/update/delete` |
+| `booking_pages:read` | `calendars list`, `booking-pages list/get`, `event-types list` (own), `slots list` (own event type), schedules, private links, branding, attributes, connection setup, reminder previews/insights and import previews |
+| `booking_pages:write` | Booking page writes, schedule writes, private-link writes, reminder tests, branding, attributes and imports |
+| `forms:read` | Form list/get, submissions, routing targets, CRM fields, phone regions and routing tests |
+| `forms:write` | Form create/update/delete and logo upload |
+| `workflows:write` + `booking_pages:write` | Creating a booking workflow connection |
 | `bookings:read` | `bookings list`, `bookings get` |
 
 `bookings:write` is not accepted when minting new keys and is not surfaced on this CLI or the MCP server. Existing keys that were minted with it still authenticate, but no write paths are wired up for bookings.
@@ -313,6 +382,9 @@ src/
 │   ├── profile/             # whoami
 │   ├── calendars/           # list
 │   ├── booking-pages/       # list, get, create, update, delete
+│   ├── forms/               # forms, routing, submissions, logos
+│   ├── booking-controls/    # private links, reminders, branding, attributes, imports
+│   ├── schedules/           # working hours and date overrides
 │   ├── event-types/         # list
 │   ├── slots/               # list
 │   └── bookings/            # list, get
@@ -341,8 +413,10 @@ npm install
 npm run dev -- profile whoami --pretty
 npm run dev -- bookings list --output table
 
-# Typecheck only
+# Validation
 npm run typecheck
+npm test
+npm run fields:check
 
 # Production build
 npm run build           # → dist/index.js + dist/mcp.js
@@ -356,7 +430,9 @@ To add a command:
 3. Include the group in `src/commands/index.ts` → `allCommands`
 4. `npm run build && carly <group> <subcommand> --help`
 
-Both the CLI and the MCP server pick it up automatically.
+Both the CLI and the MCP server pick it up automatically. The field check covers booking-page, schedule and form create/update inputs. It uses a sibling backend checkout when present, otherwise the public snapshot in `schemas/api_v1_fields.txt`; set `CARLY_API_FIELDS_FILE` to override it. Refresh that snapshot alongside server schema changes.
+
+Read requests retry transient failures. Writes are never automatically retried because creating a form, sending a test reminder or importing pages may already have taken effect.
 
 ## License
 
